@@ -1,0 +1,10 @@
+# dsh-persona-modes —— bundle patch
+#
+# 只挂一行：宿主半（index.js）负责持久化、HTTP 路由与系统提示段；
+# 客户端半（client.js，由 package.json 的 exports["./client"] 指到）
+# 在「设置」里注册「人格模式」分区。
+#
+# 客户端半的模块图顺序由 package.json 的 dsh.client.inject 声明，这里不重复。
+- insert:
+    - id: persona-modes
+      name: dsh-persona-modes

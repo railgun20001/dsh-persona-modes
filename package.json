@@ -1,0 +1,79 @@
+{
+  "name": "dsh-persona-modes",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "DeepSeek Harness 人格模式：在设置里一键切换猫娘、傲娇、毒舌、妈妈、牛马、鲸鱼娘、女仆、大小姐等语气；提示词按条注入，关闭时 0 字。",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "deepseek-harness-plugin",
+    "cordis",
+    "persona",
+    "personality",
+    "roleplay",
+    "catgirl",
+    "prompt"
+  ],
+  "homepage": "https://github.com/railgun20001/dsh-persona-modes#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/railgun20001/dsh-persona-modes.git"
+  },
+  "bugs": {
+    "url": "https://github.com/railgun20001/dsh-persona-modes/issues"
+  },
+  "author": "railgun20001",
+  "license": "MIT",
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "default": "./index.js"
+    },
+    "./client": {
+      "default": "./client.js"
+    },
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "src",
+    "test",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings-general",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    },
+    "manifestVersion": 1
+  },
+  "scripts": {
+    "test": "node --test test/modes.test.mjs test/store.test.mjs test/routes.test.mjs test/apply.test.mjs test/client.test.mjs",
+    "check": "node --test test/modes.test.mjs test/store.test.mjs test/routes.test.mjs test/apply.test.mjs test/client.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "meta": {
+    "title": "人格模式",
+    "description": "设置里一键切换猫娘、傲娇、毒舌、妈妈、牛马、鲸鱼娘、女仆、大小姐等语气；只改表达，不改事实与代码。"
+  }
+}

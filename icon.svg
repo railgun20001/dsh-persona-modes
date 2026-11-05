@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Persona modes">
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="#d97706" opacity="0.14"/>
+  <path d="M18 24c0-3 2-5 5-5h18c3 0 5 2 5 5v10c0 7-5 13-14 13s-14-6-14-13V24Z" fill="none" stroke="#d97706" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M22 19l-3-6 8 4M42 19l3-6-8 4" fill="none" stroke="#d97706" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="26" cy="30" r="2.2" fill="#d97706"/>
+  <circle cx="38" cy="30" r="2.2" fill="#d97706"/>
+  <path d="M28 37c2 2 6 2 8 0" fill="none" stroke="#d97706" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M50 14l1.4 3.6L55 19l-3.6 1.4L50 24l-1.4-3.6L45 19l3.6-1.4L50 14Z" fill="#d97706" opacity="0.8"/>
+</svg>

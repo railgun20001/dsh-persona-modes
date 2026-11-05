@@ -295,6 +295,7 @@ window.__ModuleLoader__.load({
     function ModeCard({ t, localeId, mode, active, pendingId, onSelect }) {
       const selected = mode.id === active
       const busy = pendingId !== null
+      const chars = typeof mode.chars === 'number' ? mode.chars : 0
       return h(
         'button',
         {
@@ -319,7 +320,7 @@ window.__ModuleLoader__.load({
           h(
             'span',
             { className: 'pm-meta' },
-            mode.chars === 0 ? t('charsZero') : t('chars', { count: mode.chars }),
+            chars === 0 ? t('charsZero') : t('chars', { count: chars }),
           ),
         ),
         h('span', { className: 'pm-check', 'aria-hidden': 'true' }, '✓'),

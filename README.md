@@ -138,6 +138,12 @@ npm test
 - `/persona` 命令的 input 声明、参数解析与切换结果；
 - 客户端工厂、`settings.section` 注册、字典键集、卡片渲染、字数展示与写盘失败提示。
 
+## 验证记录（2026-11-05）
+
+- 离线测试：`npm test`，33 项全部通过（模式预算、状态读写失败重试、路由 405/403/413、命令 input、客户端渲染与写盘失败提示）。
+- 真实宿主：在隔离 profile 中启动 DSH 0.2.1-rc.5 桌面宿主，插件正常加载；设置 → 人格模式在中文 / English 下均显示 9 张卡片，点击切换立即更新 `state.json`。
+- 组装诊断：`POST /dsh-persona-modes/debug` 返回 `sections=[{persona-modes:policy, 53 chars}]`、`contexts=[{persona-modes:active, 149 chars}]`（鲸鱼娘）；切到 `off` 后两者均为空数组，证明关闭模式不产生人格文本。
+
 ## 已知限制
 
 - **全局生效**：模式是当前 DSH 用户的全局偏好，不是按会话隔离。切换后所有会话的下一轮都使用新语气。

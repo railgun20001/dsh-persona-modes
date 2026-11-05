@@ -57,7 +57,7 @@ DSH 的 DeepSeek 路由声明了 `systemPromptUpdate: 'in-history'`：同一请�
 因此这里分成两层：
 
 1. **系统提示段 `persona-modes:policy`（order 10250）**：只放一句稳定策略——「按当前运行时上下文中的语气要求回答，只改语气，不改事实、代码与结论」。它不含具体模式名，猫娘 → 牛马时完全不变。
-2. **运行时上下文 `persona-modes:active`（order 130）**：放具体的约 120–150 字人格文本。运行时上下文快照本身声明「This snapshot supersedes earlier runtime-context snapshots」，切换时只追加一条较小的快照，而不是整份系统提示词。
+2. **运行时上下文 `persona-modes:active`（order 130）**：放具体的约 120–150 字人格文本。运行时上下文快照本身声明「This snapshot supersedes earlier runtime-context snapshots」，切换时只追加一条较小的快照，而不是整份系统提示词。模型侧看到的是 DSH 生成的 user 角色运行时快照，系统提示段只负责授权它影响语气。
 
 开启 / 关闭人格时策略段会在「有文本 / 空串」之间变化，这一次会触发系统提示词更新；模式之间的来回切换不会。这个取舍是刻意的：把高频操作（换模式）的成本压到最小，把低频操作（开 / 关）留一次正常更新。
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-persona-modes",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "DeepSeek Harness 人格模式：在设置里一键切换猫娘、傲娇、毒舌、妈妈、牛马、鲸鱼娘、女仆、大小姐等语气；提示词按条注入，关闭时 0 字。",
   "keywords": [

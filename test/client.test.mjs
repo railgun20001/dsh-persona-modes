@@ -201,7 +201,7 @@ assert.ok(allText.includes('牛马'))
 assert.ok(allText.includes('鲸鱼娘'))
 assert.ok(allText.includes('大小姐'))
 assert.ok(allText.includes('当前'))
-assert.ok(allText.includes('约 117 字'))
+assert.ok(allText.includes('约 112 字'))
 assert.ok(allText.includes('查看当前提示词'))
 
 const card = elements.find((node) => node.type === 'button' && node.props?.['aria-pressed'] === 'true')

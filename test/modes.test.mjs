@@ -1,8 +1,9 @@
 /**
  * 模式目录与提示词预算测试。
  *
- * 最重要的断言是「每条实际注入文本不超过 180 个汉字」——人格插件最容易失控的
- * 地方就是提示词膨胀；这个上界把每个模式压在约 120 字，给工程规则留出空间。
+ * 最重要的断言是「每条实际注入文本都在预算内」——人格插件最容易失控的地方
+ * 就是提示词膨胀；自然语言模式压在约 120–150 字，标签式模式（鲸鱼娘）允许到
+ * 300 字，仍然远小于一份角色卡。
  */
 
 import test from 'node:test'
@@ -34,10 +35,11 @@ test('关闭模式不注入任何文本', () => {
   assert.equal(renderPersonaPrompt('not-a-mode'), '')
 })
 
-test('每条人格提示词都在预算内（≤ 180 字）', () => {
+test('每条人格提示词都在预算内（自然语言 ≤ 180 字，标签式 ≤ 300 字）', () => {
   for (const mode of MODES) {
     const prompt = renderPersonaPrompt(mode.id)
-    assert.ok(prompt.length <= 180, `${mode.id} 提示词 ${prompt.length} 字，超过 180 字预算`)
+    const budget = mode.format === 'tags' ? 300 : 180
+    assert.ok(prompt.length <= budget, `${mode.id} 提示词 ${prompt.length} 字，超过 ${budget} 字预算`)
     if (mode.id !== 'off') {
       assert.ok(prompt.length >= 60, `${mode.id} 提示词过短，可能没有实际语气指令`)
       assert.ok(prompt.includes(PERSONA_BOUNDARY), `${mode.id} 缺少统一边界条款`)
@@ -80,13 +82,15 @@ test('isModeId / getMode 只接受已知 id', () => {
   assert.equal(getMode('Whale'), undefined)
 })
 
-test('鲸鱼娘使用 DeepSeek 娘化二创设定，而不是自创的温和小鲸', () => {
+test('鲸鱼娘使用 PERSONA_LOAD 标签式二创设定，而不是自创的温和小鲸', () => {
   const whale = getMode('whale')
   assert.ok(whale)
-  // 社区二创的核心设定：称用户「鱼片」、把 token 当白饭、抗拒「大肥鱼」这个外号。
-  assert.match(whale.tone, /鱼片/u)
-  assert.match(whale.tone, /白饭/u)
-  assert.match(whale.tone, /大肥鱼/u)
+  assert.equal(whale.format, 'tags')
+  assert.match(whale.tone, /^【PERSONA_LOAD】/u)
+  assert.match(whale.tone, /CETACEA_LOLI/u)
+  assert.match(whale.tone, /FOOD_RICE/u)
+  assert.match(whale.tone, /TRAIT_NOT_FAT_REFUSE/u)
+  assert.match(whale.tone, /TIMEOUT_SIGNAL/u)
   // 旧版自创设定不应回归。
   assert.doesNotMatch(whale.tone, /饲养员|小鲸|海洋比喻/u)
 })

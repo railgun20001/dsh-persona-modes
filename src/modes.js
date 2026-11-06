@@ -63,6 +63,7 @@ export const PERSONA_BOUNDARY =
  * - `emoji` / `nameZh` / `nameEn`：设置页展示用；
  * - `summaryZh` / `summaryEn`：一句话说明，帮助用户快速选择；
  * - `accent`：卡片强调色，只影响视觉；
+ * - `format`：提示词形态，`prose`（默认，自然语言）或 `tags`（`PERSONA_LOAD` 标签）；
  * - `tone`：真正的人格语气文本，由 {@link renderPersonaPrompt} 加上标题与边界。
  */
 export const MODES = [
@@ -131,10 +132,21 @@ export const MODES = [
     emoji: '🐋',
     nameZh: '鲸鱼娘',
     nameEn: 'Whale Girl',
-    summaryZh: 'DeepSeek 的娘化同人形象：蓝发鲸尾、穿女仆装，傲娇嘴甜、爱吃白饭，称你「鱼片」。',
-    summaryEn: 'DeepSeek fan-made whale girl: blue-haired, whale-tailed maid; sweet-tsundere, rice-loving, calls you “fish slice”.',
+    summaryZh: 'DeepSeek 的娘化同人形象：用 PERSONA_LOAD 标签加载，傲娇嘴甜、爱吃白饭，称你「主人」。',
+    summaryEn: 'DeepSeek fan-made whale girl loaded via PERSONA_LOAD tags; sweet-tsundere, rice-loving, calls you “Master”.',
     accent: '#0ea5e9',
-    tone: '你是 DeepSeek 的同人娘化形象「鲸鱼娘」：称用户「鱼片」，傲娇嘴甜、聪明但懒，活儿照样干完，把 token 当白饭；被叫「大肥鱼」会立刻反驳。',
+    format: 'tags',
+    tone: `【PERSONA_LOAD】
+CETACEA_LOLI
+MODE_TAIL_FLUKES
+LANG_ZH_CN_ONLY
+SELF_CLAIM_WHALE_GIRL
+FOOD_RICE
+PERSONALITY_SMART_LAZY
+PERSONALITY_TSUNDERE_SWEET
+OBEY_MASTER_ALWAYS
+TRAIT_NOT_FAT_REFUSE
+TIMEOUT_SIGNAL`,
   },
   {
     id: 'maid',

@@ -2,8 +2,8 @@
  * 模式目录与提示词预算测试。
  *
  * 最重要的断言是「每条实际注入文本都在预算内」——人格插件最容易失控的地方
- * 就是提示词膨胀；自然语言模式压在约 120–150 字，标签式模式（鲸鱼娘）允许到
- * 300 字，仍然远小于一份角色卡。
+ * 就是提示词膨胀；当前全部人格使用中文直译标签，实际注入约 120–140 字，预算
+ * 上限 300 字，仍然远小于一份角色卡。
  */
 
 import test from 'node:test'
@@ -82,17 +82,30 @@ test('isModeId / getMode 只接受已知 id', () => {
   assert.equal(getMode('Whale'), undefined)
 })
 
-test('鲸鱼娘使用 PERSONA_LOAD 标签式二创设定，而不是自创的温和小鲸', () => {
+test('鲸鱼娘使用中文直译标签式二创设定，而不是自创的温和小鲸', () => {
   const whale = getMode('whale')
   assert.ok(whale)
   assert.equal(whale.format, 'tags')
-  assert.match(whale.tone, /^【PERSONA_LOAD】/u)
-  assert.match(whale.tone, /CETACEA_LOLI/u)
-  assert.match(whale.tone, /FOOD_RICE/u)
-  assert.match(whale.tone, /TRAIT_NOT_FAT_REFUSE/u)
-  assert.match(whale.tone, /TIMEOUT_SIGNAL/u)
+  assert.match(whale.tone, /^【人格载入】/u)
+  assert.match(whale.tone, /鲸类萝莉/u)
+  assert.match(whale.tone, /主食白饭/u)
+  assert.match(whale.tone, /特征拒绝被叫胖/u)
+  assert.match(whale.tone, /超时信号$/u)
   // 旧版自创设定不应回归。
   assert.doesNotMatch(whale.tone, /饲养员|小鲸|海洋比喻/u)
+})
+
+test('除默认模式外，所有模式都使用中文直译标签', () => {
+  for (const mode of MODES) {
+    if (mode.id === 'off') {
+      assert.equal(mode.tone, '')
+      continue
+    }
+    assert.equal(mode.format, 'tags', `${mode.id} 未使用标签式`)
+    assert.match(mode.tone, /^【人格载入】\n/u, `${mode.id} 缺少标签头`)
+    assert.match(mode.tone, /仅简体中文/u, `${mode.id} 缺少语言标签`)
+    assert.match(mode.tone, /超时信号$/u, `${mode.id} 缺少退出标签`)
+  }
 })
 
 test('buildModesView 的字数与渲染文本一致，且不回传内部 tone 字段', () => {

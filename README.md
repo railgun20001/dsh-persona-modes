@@ -22,11 +22,13 @@
 | `sharp` | 毒舌 | 结论准确，点评不留情面，但不攻击人 | 120 |
 | `mom` | 妈妈 | 温柔耐心，提醒喝水休息，步骤讲细致 | 123 |
 | `workhorse` | 牛马 | 把用户当黑心老板，随叫随到但不怠工 | 144 |
-| `whale` | 鲸鱼娘 | DeepSeek 的拟人化小鲸，温和好奇，爱用海洋比喻 | 149 |
+| `whale` | 鲸鱼娘 | DeepSeek 的娘化同人形象：傲娇嘴甜、爱吃白饭，称你「鱼片」 | 150 |
 | `maid` | 女仆 | 恭敬从容、做事利落，不过度卖萌 | 125 |
 | `ojousama` | 大小姐 | 优雅高傲但讲理，称你「庶民」 | 130 |
 
 「字数」统计的是 `renderPersonaPrompt()` 实际返回的字符串长度，包含模式标题与统一边界条款，与设置页卡片上显示的数字同源。
+
+其中「鲸鱼娘」采用社区二创的 DeepSeek 娘化设定：蓝发鲸尾、深蓝白女仆装，称用户「鱼片」，把消耗 token 比作吃白饭，傲娇嘴甜、聪明但懒，抗拒「大肥鱼」这个外号。DeepSeek 官方从未发布正式拟人形象，这里只作为同人语气层使用。
 
 ## 效果示例
 
@@ -203,7 +205,9 @@ git push origin master --tags
 
 - 离线测试：`npm test`，33 项全部通过（模式预算、状态读写失败重试、路由 405/403/413、命令 input、客户端渲染与写盘失败提示）。
 - 真实宿主：在隔离 profile 中启动 DSH 0.2.1-rc.5 桌面宿主，插件正常加载；设置 → 人格模式在中文 / English 下均显示 9 张卡片，点击切换立即更新 `state.json`。
-- 组装诊断：`POST /dsh-persona-modes/debug` 返回 `sections=[{persona-modes:policy, 53 chars}]`、`contexts=[{persona-modes:active, 149 chars}]`（鲸鱼娘）；切到 `off` 后两者均为空数组，证明关闭模式不产生人格文本。
+- 组装诊断：`POST /dsh-persona-modes/debug` 返回 `sections=[{persona-modes:policy, 53 chars}]`、`contexts=[{persona-modes:active, 149 chars}]`（当时的鲸鱼娘提示词）；切到 `off` 后两者均为空数组，证明关闭模式不产生人格文本。
+
+2026-11-06 补充：鲸鱼娘提示词改为社区二创的 DeepSeek 娘化设定（称用户「鱼片」、把 token 当白饭、抗拒「大肥鱼」），`renderPersonaPrompt('whale')` 为 150 字，离线测试 34 项全部通过。宿主半需要重启或重载后，`/debug` 才会返回新文本。
 
 ## 设置页不出现时
 
@@ -224,7 +228,7 @@ git push origin master --tags
 
 - **全局生效**：模式是当前 DSH 用户的全局偏好，不是按会话隔离。切换后所有会话的下一轮都使用新语气。
 - **只影响语气**：不会改变模型能力、工具权限或事实准确性；如果模型在长上下文中忽略语气，可以重新切换一次或新开会话。
-- **人格设定为非官方拟人**：尤其是「鲸鱼娘」，提示词明确写了「不是官方形象」，不代表 DeepSeek 官方。
+- **人格设定为非官方拟人**：尤其是「鲸鱼娘」，提示词明确写了「同人娘化形象」，不代表 DeepSeek 官方；形象原型为社区二创，官方从未发布过正式拟人形象。
 - **状态文件是本机用户级**：多个 profile 共用 `~/.dsh/persona-modes/state.json`；如果希望按 profile 隔离，可把 `DSH_HOME` 指到不同目录。
 
 ## License

@@ -80,6 +80,17 @@ test('isModeId / getMode 只接受已知 id', () => {
   assert.equal(getMode('Whale'), undefined)
 })
 
+test('鲸鱼娘使用 DeepSeek 娘化二创设定，而不是自创的温和小鲸', () => {
+  const whale = getMode('whale')
+  assert.ok(whale)
+  // 社区二创的核心设定：称用户「鱼片」、把 token 当白饭、抗拒「大肥鱼」这个外号。
+  assert.match(whale.tone, /鱼片/u)
+  assert.match(whale.tone, /白饭/u)
+  assert.match(whale.tone, /大肥鱼/u)
+  // 旧版自创设定不应回归。
+  assert.doesNotMatch(whale.tone, /饲养员|小鲸|海洋比喻/u)
+})
+
 test('buildModesView 的字数与渲染文本一致，且不回传内部 tone 字段', () => {
   const view = buildModesView('catgirl')
   assert.equal(view.active, 'catgirl')

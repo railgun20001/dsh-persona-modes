@@ -204,6 +204,20 @@ assert.ok(allText.includes('当前'))
 assert.ok(allText.includes('约 112 字'))
 assert.ok(allText.includes('查看当前提示词'))
 
+// 「查看当前提示词」必须放在当前人格容器内部，而不是页面底部的说明区。
+const current = elements.find((node) => node.props?.className === 'pm-current')
+assert.ok(current, '没有渲染当前人格容器')
+assert.ok(
+  flatten(current).some((node) => node.props?.className === 'pm-current-details'),
+  '查看当前提示词不在当前人格容器内',
+)
+const foot = elements.find((node) => node.props?.className === 'pm-foot')
+assert.ok(foot, '没有渲染底部说明区')
+assert.ok(
+  !flatten(foot).some((node) => node.props?.className === 'pm-current-details'),
+  '查看当前提示词仍留在底部说明区',
+)
+
 const card = elements.find((node) => node.type === 'button' && node.props?.['aria-pressed'] === 'true')
 assert.ok(card, '没有渲染出选中卡片')
 card.props.onClick()

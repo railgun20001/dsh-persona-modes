@@ -268,21 +268,35 @@ window.__ModuleLoader__.load({
      */
     function CurrentBar({ t, localeId, mode, pending }) {
       const isOff = mode.id === 'off'
+      const prompt = typeof mode.prompt === 'string' ? mode.prompt : ''
+      const chars = typeof mode.chars === 'number' ? mode.chars : 0
       return h(
         'div',
-        { className: 'pm-current', role: 'status', 'aria-live': 'polite' },
-        h('span', { className: 'pm-current-emoji', 'aria-hidden': 'true' }, mode.emoji),
+        { className: 'pm-current' },
         h(
           'div',
-          { className: 'pm-current-copy' },
-          h('span', { className: 'pm-current-label' }, t('current')),
-          h('strong', { className: 'pm-current-name' }, modeName(mode, localeId)),
+          { className: 'pm-current-main', role: 'status', 'aria-live': 'polite' },
+          h('span', { className: 'pm-current-emoji', 'aria-hidden': 'true' }, mode.emoji),
+          h(
+            'div',
+            { className: 'pm-current-copy' },
+            h('span', { className: 'pm-current-label' }, t('current')),
+            h('strong', { className: 'pm-current-name' }, modeName(mode, localeId)),
+          ),
+          h(
+            'span',
+            { className: 'pm-current-hint' },
+            pending ? t('switching') : isOff ? t('off') : t('nextTurn'),
+          ),
         ),
-        h(
-          'span',
-          { className: 'pm-current-hint' },
-          pending ? t('switching') : isOff ? t('off') : t('nextTurn'),
-        ),
+        chars > 0 && prompt !== ''
+          ? h(
+              'details',
+              { className: 'pm-current-details' },
+              h('summary', { className: 'pm-current-summary' }, t('preview')),
+              h('pre', { className: 'pm-prompt' }, prompt),
+            )
+          : null,
       )
     }
 
@@ -373,19 +387,7 @@ window.__ModuleLoader__.load({
             }),
           ),
         ),
-        h(
-          'div',
-          { className: 'pm-foot' },
-          h('p', { className: 'pm-note' }, t('note')),
-          active.chars > 0
-            ? h(
-                'details',
-                { className: 'pm-details' },
-                h('summary', { className: 'pm-summary' }, t('preview')),
-                h('pre', { className: 'pm-prompt' }, active.prompt),
-              )
-            : null,
-        ),
+        h('div', { className: 'pm-foot' }, h('p', { className: 'pm-note' }, t('note'))),
       )
     }
 
@@ -495,7 +497,8 @@ window.__ModuleLoader__.load({
       .pm-hero-copy { min-width:0; }
       .pm-title { margin:0; font-size:18px; line-height:26px; font-weight:600; }
       .pm-subtitle { margin:4px 0 0; color:var(--dsw-alias-label-secondary); font-size:13px; line-height:20px; }
-      .pm-current { display:flex; align-items:center; gap:10px; padding:12px 14px; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-2); }
+      .pm-current { display:flex; flex-direction:column; gap:10px; padding:12px 14px; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-2); }
+      .pm-current-main { display:flex; align-items:center; gap:10px; }
       .pm-current-emoji { font-size:22px; line-height:1; }
       .pm-current-copy { display:flex; flex-direction:column; min-width:0; }
       .pm-current-label { color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
@@ -517,8 +520,9 @@ window.__ModuleLoader__.load({
       .pm-card[aria-pressed="true"] .pm-check { opacity:1; }
       .pm-foot { display:flex; flex-direction:column; gap:8px; }
       .pm-note { margin:0; color:var(--dsw-alias-label-tertiary); font-size:12px; line-height:18px; }
-      .pm-details { border-top:1px solid var(--dsw-alias-border-l1); padding-top:8px; }
-      .pm-summary { color:var(--dsw-alias-label-secondary); font-size:12px; cursor:pointer; }
+      .pm-current-details { border-top:1px solid var(--dsw-alias-border-l1); padding-top:8px; }
+      .pm-current-summary { color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; cursor:pointer; }
+      .pm-current-summary:hover { color:var(--dsw-alias-label-primary); }
       .pm-prompt { margin:8px 0 0; padding:10px 12px; border:1px solid var(--dsw-alias-border-l2); border-radius:8px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-secondary); font-family:var(--ds-font-family-code); font-size:12px; line-height:18px; white-space:pre-wrap; overflow-wrap:anywhere; }
       .pm-loading { padding:24px 0; color:var(--dsw-alias-label-tertiary); font-size:13px; text-align:center; }
       .pm-error { display:flex; align-items:center; flex-wrap:wrap; gap:8px 10px; padding:10px 12px; border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 45%,transparent); border-radius:10px; background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,transparent); }

@@ -144,6 +144,21 @@ npm test
 - 真实宿主：在隔离 profile 中启动 DSH 0.2.1-rc.5 桌面宿主，插件正常加载；设置 → 人格模式在中文 / English 下均显示 9 张卡片，点击切换立即更新 `state.json`。
 - 组装诊断：`POST /dsh-persona-modes/debug` 返回 `sections=[{persona-modes:policy, 53 chars}]`、`contexts=[{persona-modes:active, 149 chars}]`（鲸鱼娘）；切到 `off` 后两者均为空数组，证明关闭模式不产生人格文本。
 
+## 设置页不出现时
+
+按顺序检查：
+
+1. `~/.dsh/profiles/<profile>/package.json` 的 `dsh.profile.bundles` 里有 `dsh-persona-modes`；
+2. `~/.dsh/profiles/<profile>/cordis.patch.yml` 里**没有**这类覆盖（有就改成 `disabled: false`）：
+   ```yaml
+   - id: persona-modes
+     name: dsh-persona-modes
+     disabled: true
+   ```
+   插件管理器的开关反映 bundle 选择，但 profile patch 在 bundle 之后应用，`disabled: true` 会真正关掉宿主半。
+3. 宿主半在线：`POST http://127.0.0.1:<port>/dsh-persona-modes/ping` 应返回 200；
+4. 客户端半属于页面 bundle，改完 profile 后在 DSH 窗口按 `Ctrl+R` 刷新一次。
+
 ## 已知限制
 
 - **全局生效**：模式是当前 DSH 用户的全局偏好，不是按会话隔离。切换后所有会话的下一轮都使用新语气。

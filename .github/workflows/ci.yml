@@ -1,0 +1,65 @@
+# 持续集成：离线测试 + 打包内容校验。
+#
+# 为什么跑 ubuntu 和 windows 两个平台：插件本身只依赖 node 标准库（fs/path/os/http），
+# 宿主的客户端半在浏览器、宿主半在 Node；这里用两个平台同时跑，避免写出「只在
+# Windows 路径分隔符下能过」的状态文件逻辑（状态文件路径来自 os.homedir()）。
+#
+# 端到端（真实 DSH 宿主里点开关）不放在 CI：需要在隔离 profile 里启动桌面宿主，
+# GitHub 托管的 runner 没有交互式桌面会话。README 的「验证记录」保留人工结论。
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node-version: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: 安装 Node ${{ matrix.node-version }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # 零运行时依赖、零开发依赖：不装 node_modules，测试只用 node:test。
+      - name: 离线测试
+        run: npm test
+
+      # 发版前必须确认 tarball 里真的带上了宿主半、客户端半、源码目录与 bundle patch，
+      # 否则用户 npm 装完是「装了但设置页不出现」，比测试红更难排查。
+      - name: 校验打包内容完整
+        shell: bash
+        run: |
+          npm pack --dry-run --json > pack.json
+          node -e '
+            const [pkg] = JSON.parse(require("node:fs").readFileSync("pack.json", "utf8"));
+            const files = new Set(pkg.files.map((f) => f.path));
+            const required = [
+              "index.js",
+              "client.js",
+              "src/modes.js",
+              "src/routes.js",
+              "src/store.js",
+              "cordis.patch.yml",
+              "locale/zh.json",
+              "locale/en.json",
+              "icon.svg",
+              "README.md",
+              "LICENSE",
+            ];
+            const missing = required.filter((f) => !files.has(f));
+            if (missing.length) {
+              console.error("tarball 缺少文件: " + missing.join(", "));
+              process.exit(1);
+            }
+            console.log("tarball 完整，共 " + files.size + " 个文件");
+          '

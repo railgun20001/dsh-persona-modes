@@ -1,5 +1,9 @@
 # dsh-persona-modes —— 人格模式
 
+[![npm version](https://img.shields.io/npm/v/dsh-persona-modes.svg)](https://www.npmjs.com/package/dsh-persona-modes)
+[![license](https://img.shields.io/npm/l/dsh-persona-modes.svg)](LICENSE)
+[![CI](https://github.com/railgun20001/dsh-persona-modes/actions/workflows/ci.yml/badge.svg)](https://github.com/railgun20001/dsh-persona-modes/actions/workflows/ci.yml)
+
 给 DSH 的回复换一种语气，但不改变事实、代码与工程纪律。
 
 - **切换位置**：设置 → **人格模式**
@@ -74,13 +78,27 @@ DSH 的 DeepSeek 路由声明了 `systemPromptUpdate: 'in-history'`：同一请�
 
 ## 安装
 
-### 方式一：DSH 插件页（推荐）
+### 方式一：从 npm 装（推荐）
+
+```powershell
+# 在 profile 目录（例如 ~/.dsh/profiles/desktop）执行
+pnpm add dsh-persona-modes
+```
+
+然后把 `dsh-persona-modes` 加入该 profile `package.json` 的 `dsh.profile.bundles`，并在
+`cordis.patch.yml` 里加入下面的 insert（与「方式三」最后两步完全相同）。宿主半由 HMR 重新组合后
+加载，客户端半需要刷新页面（`Ctrl+R`）才会出现新的设置分区。
+
+包内容由 `files` 白名单决定：`index.js` + `client.js` + `src/` + `cordis.patch.yml` + `locale/` +
+`icon.svg` + README + LICENSE；`test/` 不进 tarball，需要跑测试请从源码仓库执行。
+
+### 方式二：DSH 插件页（本地目录）
 
 1. 把本目录放到本机任意位置；
 2. 打开 DSH 侧边栏的「插件」页 → 添加本地插件 → 选择 `dsh-persona-modes` 目录；
 3. 宿主半由 HMR 重新组合后加载；客户端半需要刷新页面（`Ctrl+R`）才会出现新的设置分区。
 
-### 方式二：手动安装到 profile
+### 方式三：手动安装到 profile
 
 ```powershell
 # 在 profile 目录（例如 ~/.dsh/profiles/desktop）执行
@@ -137,6 +155,41 @@ npm test
 - 路由的 405 / 403 / 413 / ping / state / select / 未知模式；
 - `/persona` 命令的 input 声明、参数解析与切换结果；
 - 客户端工厂、`settings.section` 注册、字典键集、卡片渲染、字数展示与写盘失败提示。
+
+## 发布与维护
+
+CI（`.github/workflows/ci.yml`）在 `ubuntu-latest` 与 `windows-latest` 上跑 Node 20 / 22 / 24，
+每条腿两步：`npm test`（离线测试）+ `npm pack --dry-run` 校验 tarball 里确实带上宿主半、客户端半、
+`src/`、`cordis.patch.yml`、`locale/`、`icon.svg`、README 与 LICENSE —— 少一个文件，用户装完就是
+「装了但设置页不出现」，比测试红更难排查。真实宿主里的开关验证不在 CI：它要在隔离 profile 里启动
+桌面宿主，托管 runner 没有交互式桌面会话，结论见下面的「验证记录」。
+
+发版（`.github/workflows/release.yml`）推 `v*` tag 触发：校验 tag 与 `package.json` 版本一致 →
+`npm test` → 已发布则跳过、未发布则 `npm publish --provenance` → 建 GitHub Release。
+认证走 npm 可信发布（Trusted Publishing / OIDC），仓库里不存任何 npm token。
+
+首次发布按这个顺序（可信发布要求包已存在，且配置创建后 **2 天内**要完成首次成功发布，所以先发再配）：
+
+```powershell
+# 本机 npm 默认 registry 是镜像源，登录与发布都要显式指官方源
+npm login --registry=https://registry.npmjs.org/
+npm test
+npm publish --registry=https://registry.npmjs.org/
+```
+
+然后在 npmjs.com 的包设置里补 Trusted publishing：GitHub Actions、`railgun20001`、
+`dsh-persona-modes`、工作流文件名 `release.yml`。之后每次发版只需改版本号、提交、推 tag：
+
+```powershell
+npm version patch --no-git-tag-version
+git commit -am "chore(release): 0.1.1"
+git tag v0.1.1
+git push origin master --tags
+```
+
+流程幂等：registry 上已存在的版本不会重发，只补一个 GitHub Release。版本号语义按 0.x 处理 ——
+`0.1.x` 修 bug，`0.2.0` 起加模式或改配置/状态文件形状（状态文件只有 `{ version, active, updatedAt }`，
+改形状要同时升 `version` 并写迁移）。
 
 ## 验证记录（2026-11-05）
 

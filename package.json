@@ -23,7 +23,10 @@
   "bugs": {
     "url": "https://github.com/railgun20001/dsh-persona-modes/issues"
   },
-  "author": "railgun20001",
+  "author": {
+    "name": "railgun20001",
+    "url": "https://github.com/railgun20001"
+  },
   "license": "MIT",
   "main": "index.js",
   "exports": {
@@ -41,7 +44,6 @@
     "index.js",
     "client.js",
     "src",
-    "test",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
@@ -64,12 +66,15 @@
   },
   "scripts": {
     "test": "node --test test/modes.test.mjs test/store.test.mjs test/routes.test.mjs test/apply.test.mjs test/client.test.mjs",
-    "check": "node --test test/modes.test.mjs test/store.test.mjs test/routes.test.mjs test/apply.test.mjs test/client.test.mjs"
+    "check": "node --test test/modes.test.mjs test/store.test.mjs test/routes.test.mjs test/apply.test.mjs test/client.test.mjs",
+    "prepublishOnly": "npm test"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20",
+    "dsh": ">=0.2.0-rc.1"
   },
   "publishConfig": {
+    "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
   "meta": {

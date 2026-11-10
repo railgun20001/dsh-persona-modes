@@ -2,7 +2,7 @@
  * 模式目录与提示词预算测试。
  *
  * 最重要的断言是「每条实际注入文本都在预算内」——人格插件最容易失控的地方
- * 就是提示词膨胀；当前全部人格使用中文直译标签，实际注入约 109–127 字，预算
+ * 就是提示词膨胀；当前全部人格使用中文直译标签，实际注入约 109–130 字，预算
  * 上限 300 字，仍然远小于一份角色卡。
  */
 
@@ -107,6 +107,27 @@ test('除默认模式外，所有模式都使用中文直译标签', () => {
     assert.match(mode.tone, /^【人格载入】\n/u, `${mode.id} 缺少标签头`)
     assert.doesNotMatch(mode.tone, /超时信号/u, `${mode.id} 不应再带超时信号`)
   }
+})
+
+test('内置标签块不再写死称呼/自称，由配置统一追加', () => {
+  for (const mode of MODES) {
+    if (mode.id === 'off') continue
+    assert.doesNotMatch(mode.tone, /^自称/mu, `${mode.id} 仍写死了自称`)
+    assert.doesNotMatch(mode.tone, /^称呼/mu, `${mode.id} 仍写死了称呼`)
+    const prompt = renderPersonaPrompt(mode.id)
+    if (mode.selfName !== '') {
+      assert.match(prompt, new RegExp(`^自称${mode.selfName}$`, 'mu'), `${mode.id} 缺少自称`)
+    }
+    if (mode.address !== '') {
+      assert.match(prompt, new RegExp(`^称呼${mode.address}$`, 'mu'), `${mode.id} 缺少称呼`)
+    }
+  }
+})
+
+test('提示词里出现同一个词时，配置的称呼/自称仍然追加', () => {
+  const body = composePersonaBody('【人格载入】\n女儿', '女儿', '小棉袄')
+  assert.match(body, /^称呼女儿$/mu)
+  assert.match(body, /^自称小棉袄$/mu)
 })
 
 test('女儿模式有默认称呼、自称与中文标签', () => {

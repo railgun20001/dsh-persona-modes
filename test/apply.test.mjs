@@ -94,6 +94,7 @@ test('commandHelp 列出当前模式与全部 id', () => {
   const text = commandHelp('whale')
   assert.ok(text.includes('当前人格：鲸鱼娘（whale）'))
   assert.ok(text.includes('catgirl（猫娘）'))
+  assert.ok(text.includes('daughter（女儿）'))
   assert.ok(text.includes('off（默认）'))
 })
 
@@ -101,7 +102,7 @@ test('系统提示段文本函数随 store 变化', () => {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-persona-modes-apply-'))
   try {
     const store = createStore({ file: join(dir, 'state.json') })
-    const text = () => renderPersonaPrompt(store.getActive())
+    const text = () => renderPersonaPrompt(store.getActive(), store.snapshot())
     assert.equal(text(), '')
     store.setActive('mom')
     assert.ok(text().includes('妈妈'))

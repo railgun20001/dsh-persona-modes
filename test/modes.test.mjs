@@ -11,6 +11,7 @@ import assert from 'node:assert/strict'
 
 import {
   buildModesView,
+  composePersonaBody,
   DEFAULT_MODE_ID,
   getMode,
   isModeId,
@@ -21,6 +22,7 @@ import {
   PERSONA_POLICY_TEXT,
   POLICY_SECTION_ORDER,
   renderPersonaPrompt,
+  resolveMode,
 } from '../src/modes.js'
 
 test('模式 id 唯一且包含默认模式', () => {
@@ -51,7 +53,7 @@ test('每条人格提示词都在预算内（自然语言 ≤ 180 字，标签�
 test('默认模式排第一，其余模式按顺序给出', () => {
   assert.deepEqual(
     MODES.map((mode) => mode.id),
-    ['off', 'catgirl', 'tsundere', 'sharp', 'mom', 'workhorse', 'whale', 'maid', 'ojousama'],
+    ['off', 'catgirl', 'tsundere', 'sharp', 'mom', 'workhorse', 'whale', 'maid', 'ojousama', 'daughter'],
   )
 })
 
@@ -105,6 +107,79 @@ test('除默认模式外，所有模式都使用中文直译标签', () => {
     assert.match(mode.tone, /^【人格载入】\n/u, `${mode.id} 缺少标签头`)
     assert.doesNotMatch(mode.tone, /超时信号/u, `${mode.id} 不应再带超时信号`)
   }
+})
+
+test('女儿模式有默认称呼、自称与中文标签', () => {
+  const mode = getMode('daughter')
+  assert.ok(mode)
+  assert.equal(mode.address, '爸爸')
+  assert.equal(mode.selfName, '女儿')
+  const prompt = renderPersonaPrompt('daughter')
+  assert.match(prompt, /乖巧黏人/u)
+  assert.match(prompt, /自称女儿/u)
+  assert.match(prompt, /称呼爸爸/u)
+})
+
+test('composePersonaBody 替换已有称呼/自称，并追加缺失项', () => {
+  assert.equal(
+    composePersonaBody('【人格载入】\n自称猫娘\n称呼主人\n喵尾音', '铲屎官', '本喵'),
+    '【人格载入】\n自称本喵\n称呼铲屎官\n喵尾音',
+  )
+  assert.equal(
+    composePersonaBody('【人格载入】\n女儿', '爸爸', '女儿'),
+    '【人格载入】\n女儿\n自称女儿\n称呼爸爸',
+  )
+  // 空值表示删除该行。
+  assert.equal(composePersonaBody('【人格载入】\n自称我\n称呼主人', '', ''), '【人格载入】')
+  // 自然语言提示词不解析行首，直接把称呼/自称追加到末尾。
+  assert.equal(
+    composePersonaBody('你是一个温柔的助手。', '老板', '小助手'),
+    '你是一个温柔的助手。\n自称小助手\n称呼老板',
+  )
+})
+
+test('resolveMode 叠加内置覆盖值，并带回默认值', () => {
+  const state = {
+    overrides: { catgirl: { address: '铲屎官', selfName: '本喵', prompt: '【人格载入】\n猫科少女' } },
+    customModes: [],
+  }
+  const mode = resolveMode('catgirl', state)
+  assert.ok(mode)
+  assert.equal(mode.address, '铲屎官')
+  assert.equal(mode.selfName, '本喵')
+  assert.equal(mode.custom, false)
+  assert.deepEqual(mode.defaults, {
+    address: '主人',
+    selfName: '猫娘',
+    prompt: getMode('catgirl').tone,
+  })
+})
+
+test('buildModesView 包含自定义人格并给出可编辑字段', () => {
+  const state = {
+    overrides: {},
+    customModes: [{
+      id: 'custom-test',
+      emoji: '🧩',
+      nameZh: '测试人格',
+      nameEn: 'Test persona',
+      summaryZh: '测试人格',
+      summaryEn: 'Test persona',
+      accent: '#0ea5e9',
+      defaults: { address: '你', selfName: '我', prompt: '【人格载入】\n测试' },
+      values: { address: '阁下', selfName: '在下', prompt: '【人格载入】\n测试' },
+    }],
+  }
+  const view = buildModesView('custom-test', state)
+  assert.equal(view.active, 'custom-test')
+  const mode = view.modes.find((entry) => entry.id === 'custom-test')
+  assert.ok(mode)
+  assert.equal(mode.custom, true)
+  assert.equal(mode.address, '阁下')
+  assert.equal(mode.selfName, '在下')
+  assert.equal(mode.body, '【人格载入】\n测试')
+  assert.equal(mode.chars, mode.prompt.length)
+  assert.ok(view.customDefaults.prompt.includes('【人格载入】'))
 })
 
 test('buildModesView 的字数与渲染文本一致，且不回传内部 tone 字段', () => {

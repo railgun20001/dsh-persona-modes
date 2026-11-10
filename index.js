@@ -64,9 +64,13 @@ const VERSION = (() => {
  * @param {string} activeId 当前模式 id。
  * @returns {string} 可直接回给用户的多行文本。
  */
-export function commandHelp(activeId) {
-  const active = getMode(activeId) ?? getMode('off')
-  const lines = MODES.map((mode) => `${mode.id}（${mode.nameZh}）`).join('、')
+export function commandHelp(activeId, state = {}) {
+  const active = getMode(activeId, state) ?? getMode('off')
+  const custom = Array.isArray(state?.customModes) ? state.customModes : []
+  const lines = [
+    ...MODES.map((mode) => `${mode.id}（${mode.nameZh}）`),
+    ...custom.map((mode) => `${mode.id}（${mode.nameZh}）`),
+  ].join('、')
   return [
     `当前人格：${active.nameZh}（${active.id}）`,
     `可用模式：${lines}`,
@@ -134,7 +138,7 @@ export function apply(ctx, config = {}) {
         order: PERSONA_CONTEXT_ORDER,
         required: true,
         interpolate: false,
-        text: () => renderPersonaPrompt(store.getActive()),
+        text: () => renderPersonaPrompt(store.getActive(), store.snapshot()),
       }),
       'persona-modes: runtime context',
     )
@@ -167,14 +171,14 @@ export function apply(ctx, config = {}) {
           handler: async (invocation) => {
             const raw = typeof invocation?.rawInput === 'string' ? invocation.rawInput.trim() : ''
             if (raw === '') {
-              return { kind: 'success', text: commandHelp(store.getActive()) }
+              return { kind: 'success', text: commandHelp(store.getActive(), store.snapshot()) }
             }
             const target = raw.split(/\s+/u)[0]
-            const mode = getMode(target)
+            const mode = getMode(target, store.snapshot())
             if (mode === undefined) {
               return {
                 kind: 'error',
-                text: `没有「${target}」这个模式。\n${commandHelp(store.getActive())}`,
+                text: `没有「${target}」这个模式。\n${commandHelp(store.getActive(), store.snapshot())}`,
               }
             }
             const result = store.setActive(mode.id)

@@ -28,8 +28,8 @@ export const ROUTE_HEADER = 'x-dsh-persona-modes'
 /** 签名头的唯一合法值；没有语义，只用于等值判断。 */
 export const ROUTE_HEADER_VALUE = '1'
 
-/** 单次请求体上限：只接受 `{"id":"catgirl"}` 这种几十字节的 JSON。 */
-export const MAX_BODY_BYTES = 4096
+/** 单次请求体上限：要容纳自定义人格的提示词，留 16 KB。 */
+export const MAX_BODY_BYTES = 16_384
 
 /**
  * 写一个 JSON 响应；连接已断开时静默忽略。
@@ -130,13 +130,14 @@ export function readJsonBody(req, limit = MAX_BODY_BYTES) {
  * @returns {object} 客户端需要的全部数据。
  */
 export function buildStatePayload(store, version) {
-  const view = buildModesView(store.getActive())
+  const view = buildModesView(store.getActive(), store.snapshot())
   return {
     ok: true,
     host: PLUGIN_ID,
     version,
     active: view.active,
     modes: view.modes,
+    customDefaults: view.customDefaults,
   }
 }
 
@@ -145,8 +146,11 @@ export function buildStatePayload(store, version) {
  *
  * 动作：
  * - `POST /dsh-persona-modes/ping`：宿主半探针（无副作用）；
- * - `POST /dsh-persona-modes/state`：读取当前模式与全部模式；
+ * - `POST /dsh-persona-modes/state`：读取当前模式、全部模式与自定义模板；
  * - `POST /dsh-persona-modes/select`：切换模式，body `{ "id": "catgirl" }`；
+ * - `POST /dsh-persona-modes/save`：保存称呼/自称/提示词，带 `id` 改已有模式，不带 `id` 新建自定义；
+ * - `POST /dsh-persona-modes/reset`：恢复默认值，body `{ "id": "catgirl" }`；
+ * - `POST /dsh-persona-modes/delete`：删除自定义人格，body `{ "id": "custom-..." }`；
  * - `POST /dsh-persona-modes/debug`：只读诊断，返回本插件在组装结果里的段/上下文字数。
  *
  * @param {object} store 模式存储。
@@ -202,6 +206,67 @@ export function createRouteHandler(store, options = {}) {
         const result = store.setActive(parsed.value.id)
         if (result === null) {
           respond(res, 400, { ok: false, error: 'unknown-mode' })
+          return
+        }
+        const payload = buildStatePayload(store, version)
+        respond(res, 200, {
+          ...payload,
+          ...(result.persisted ? {} : { persisted: false }),
+        })
+      })
+      return
+    }
+
+    if (action === 'save') {
+      void readJsonBody(req).then((parsed) => {
+        if (!parsed.ok) {
+          respond(res, parsed.reason === 'too-large' ? 413 : 400, { ok: false, error: parsed.reason })
+          return
+        }
+        const result = store.savePersona(parsed.value)
+        if (result === null) {
+          respond(res, 400, { ok: false, error: 'invalid-input' })
+          return
+        }
+        const payload = buildStatePayload(store, version)
+        respond(res, 200, {
+          ...payload,
+          saved: result,
+          ...(result.persisted ? {} : { persisted: false }),
+        })
+      })
+      return
+    }
+
+    if (action === 'reset') {
+      void readJsonBody(req).then((parsed) => {
+        if (!parsed.ok) {
+          respond(res, parsed.reason === 'too-large' ? 413 : 400, { ok: false, error: parsed.reason })
+          return
+        }
+        const result = store.resetPersona(parsed.value.id)
+        if (result === null) {
+          respond(res, 400, { ok: false, error: 'unknown-mode' })
+          return
+        }
+        const payload = buildStatePayload(store, version)
+        respond(res, 200, {
+          ...payload,
+          ...(result.persisted ? {} : { persisted: false }),
+        })
+      })
+      return
+    }
+
+    if (action === 'delete') {
+      void readJsonBody(req).then((parsed) => {
+        if (!parsed.ok) {
+          respond(res, parsed.reason === 'too-large' ? 413 : 400, { ok: false, error: parsed.reason })
+          return
+        }
+        const result = store.deletePersona(parsed.value.id)
+        if (result === null) {
+          respond(res, 400, { ok: false, error: 'not-custom' })
           return
         }
         const payload = buildStatePayload(store, version)

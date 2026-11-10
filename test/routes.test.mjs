@@ -195,10 +195,91 @@ test('select 超大 body 返回 413 而不是断连接', async () => {
     const result = await invoke(handler, makeRequest({
       action: 'select',
       headers: SIGNED,
-      body: JSON.stringify({ id: 'catgirl', padding: 'x'.repeat(5000) }),
+      body: JSON.stringify({ id: 'catgirl', padding: 'x'.repeat(20_000) }),
     }))
     assert.equal(result.status, 413)
     assert.equal(result.body.error, 'too-large')
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('save 保存内置覆盖、reset 恢复默认', async () => {
+  const temp = tempStore()
+  try {
+    const handler = createRouteHandler(temp.store, { version: '9.9.9' })
+    const saved = await invoke(handler, makeRequest({
+      action: 'save',
+      headers: SIGNED,
+      body: JSON.stringify({ id: 'catgirl', address: '铲屎官', selfName: '本喵', prompt: '【人格载入】\n猫科少女' }),
+    }))
+    assert.equal(saved.status, 200)
+    assert.equal(saved.body.saved.id, 'catgirl')
+    assert.equal(saved.body.modes.find((mode) => mode.id === 'catgirl').address, '铲屎官')
+
+    const reset = await invoke(handler, makeRequest({
+      action: 'reset',
+      headers: SIGNED,
+      body: JSON.stringify({ id: 'catgirl' }),
+    }))
+    assert.equal(reset.status, 200)
+    assert.equal(reset.body.modes.find((mode) => mode.id === 'catgirl').address, '主人')
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('save 新建自定义人格、select 后 delete', async () => {
+  const temp = tempStore()
+  try {
+    const handler = createRouteHandler(temp.store, { version: '9.9.9' })
+    const saved = await invoke(handler, makeRequest({
+      action: 'save',
+      headers: SIGNED,
+      body: JSON.stringify({
+        nameZh: '女儿',
+        emoji: '👧',
+        address: '爸爸',
+        selfName: '女儿',
+        prompt: '【人格载入】\n女儿\n乖巧黏人',
+      }),
+    }))
+    assert.equal(saved.status, 200)
+    const id = saved.body.saved.id
+    assert.ok(id.startsWith('custom-'))
+    assert.equal(saved.body.modes.find((mode) => mode.id === id).custom, true)
+
+    const selected = await invoke(handler, makeRequest({
+      action: 'select',
+      headers: SIGNED,
+      body: JSON.stringify({ id }),
+    }))
+    assert.equal(selected.body.active, id)
+
+    const deleted = await invoke(handler, makeRequest({
+      action: 'delete',
+      headers: SIGNED,
+      body: JSON.stringify({ id }),
+    }))
+    assert.equal(deleted.status, 200)
+    assert.equal(deleted.body.active, 'off')
+    assert.equal(deleted.body.modes.some((mode) => mode.id === id), false)
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('delete 内置人格返回 400', async () => {
+  const temp = tempStore()
+  try {
+    const handler = createRouteHandler(temp.store, { version: '9.9.9' })
+    const result = await invoke(handler, makeRequest({
+      action: 'delete',
+      headers: SIGNED,
+      body: JSON.stringify({ id: 'catgirl' }),
+    }))
+    assert.equal(result.status, 400)
+    assert.equal(result.body.error, 'not-custom')
   } finally {
     temp.cleanup()
   }

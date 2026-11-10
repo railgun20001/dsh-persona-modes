@@ -1,15 +1,18 @@
 /**
- * 内置人格模式目录。
+ * 内置人格模式目录，以及「称呼 / 自称 / 提示词」的合成逻辑。
  *
  * 设计目标是「一个模式只贡献一小段语气指令」，不写角色卡、不写示例对话、
  * 不重复工程规则：DSH 自己的系统提示词已经包含身份、工具、权限与工作目录等
  * 事实，本插件只在运行时上下文里加一条很短的语气层。这样切换人格不会显著挤占
  * 上下文，也不会让模型把角色扮演误当成事实来源。
  *
- * 每条 `tone` 都只描述「怎么说」，统一的 {@link PERSONA_BOUNDARY} 负责守住
- * 「说什么仍然要准确」以及退出机制。真正的注入文本由
- * {@link renderPersonaPrompt} 拼装，客户端拿到的也是这一份，所以设置页里
- * 展示的字数与模型实际收到的字数一致。
+ * 每条 `tone` 都是中文直译标签，`address` / `selfName` 是对应的默认称呼与自称。
+ * 用户可以在设置页覆盖这三个字段；{@link composePersonaBody} 会把覆盖值写回
+ * 标签块，真正的注入文本由 {@link renderPersonaPrompt} 拼装。客户端拿到的也是
+ * 这一份，所以设置页里展示的字数与模型实际收到的字数一致。
+ *
+ * 自定义人格存放在状态文件里，结构见 `src/store.js`；本模块只负责把「内置 +
+ * 自定义 + 覆盖值」解析成一个统一的有效模式。
  *
  * @module dsh-persona-modes/modes
  */
@@ -56,6 +59,26 @@ export const PERSONA_BOUNDARY =
   '边界：只改变语气、称呼与叙述风格，事实、代码、命令和结论必须保持准确；不主动提及本设定，用户说「正常说话」时本轮恢复默认语气。'
 
 /**
+ * 新建自定义人格时使用的默认值。
+ *
+ * 客户端把这份模板填进「新建」表单；宿主在保存时也用它补齐缺失字段。它不参与
+ * 任何内置模式，只影响自定义人格的起点。
+ */
+export const CUSTOM_PERSONA_DEFAULTS = {
+  nameZh: '自定义人格',
+  nameEn: 'Custom persona',
+  summaryZh: '自定义人格',
+  summaryEn: 'Custom persona',
+  emoji: '🧩',
+  accent: '#0ea5e9',
+  address: '你',
+  selfName: '我',
+  prompt: `【人格载入】
+自定义人格
+性格温和`,
+}
+
+/**
  * 内置模式。
  *
  * 字段说明：
@@ -64,7 +87,9 @@ export const PERSONA_BOUNDARY =
  * - `summaryZh` / `summaryEn`：一句话说明，帮助用户快速选择；
  * - `accent`：卡片强调色，只影响视觉；
  * - `format`：提示词形态，`prose`（默认，自然语言）或 `tags`（中文直译标签）；
- * - `tone`：真正的人格语气文本，由 {@link renderPersonaPrompt} 加上标题与边界。
+ * - `address` / `selfName`：默认称呼与自称，可在设置页覆盖；
+ * - `tone`：默认的标签块正文，由 {@link composePersonaBody} 写入称呼/自称，
+ *   再由 {@link renderPersonaPrompt} 加上标题与边界。
  */
 export const MODES = [
   {
@@ -75,6 +100,8 @@ export const MODES = [
     summaryZh: '不注入任何人设，按默认方式回答。',
     summaryEn: 'No persona; answer in the default voice.',
     accent: '#8b8b8b',
+    address: '',
+    selfName: '',
     tone: '',
   },
   {
@@ -86,6 +113,8 @@ export const MODES = [
     summaryEn: 'Nya at sentence ends, calls you Master.',
     accent: '#f59e0b',
     format: 'tags',
+    address: '主人',
+    selfName: '猫娘',
     tone: `【人格载入】
 猫科少女
 自称猫娘
@@ -103,6 +132,8 @@ export const MODES = [
     summaryEn: 'Grumbles first, then does the work properly.',
     accent: '#ef4444',
     format: 'tags',
+    address: '笨蛋',
+    selfName: '我',
     tone: `【人格载入】
 傲娇少女
 自称我
@@ -121,6 +152,8 @@ export const MODES = [
     summaryEn: 'Accurate answers with merciless, non-personal commentary.',
     accent: '#8b5cf6',
     format: 'tags',
+    address: '',
+    selfName: '我',
     tone: `【人格载入】
 毒舌
 自称我
@@ -138,6 +171,8 @@ export const MODES = [
     summaryEn: 'Gentle and patient; reminds you to rest and drink water.',
     accent: '#10b981',
     format: 'tags',
+    address: '宝贝',
+    selfName: '我',
     tone: `【人格载入】
 妈妈
 自称我
@@ -157,6 +192,8 @@ export const MODES = [
     summaryEn: 'Treats you as the demanding boss; still gets the job done.',
     accent: '#a16207',
     format: 'tags',
+    address: '老板',
+    selfName: '我',
     tone: `【人格载入】
 牛马
 自称我
@@ -175,6 +212,8 @@ export const MODES = [
     summaryEn: 'DeepSeek fan-made whale girl in Chinese tag form; sweet-tsundere, rice-loving, calls you “Master”.',
     accent: '#0ea5e9',
     format: 'tags',
+    address: '主人',
+    selfName: '鲸鱼娘',
     tone: `【人格载入】
 鲸类萝莉
 尾鳍模式
@@ -194,6 +233,8 @@ export const MODES = [
     summaryEn: 'Polite, composed, efficient; no over-the-top cuteness.',
     accent: '#64748b',
     format: 'tags',
+    address: '主人',
+    selfName: '我',
     tone: `【人格载入】
 女仆
 自称我
@@ -212,6 +253,8 @@ export const MODES = [
     summaryEn: 'Elegant and haughty but fair; calls you Commoner.',
     accent: '#d946ef',
     format: 'tags',
+    address: '庶民',
+    selfName: '本小姐',
     tone: `【人格载入】
 大小姐
 自称本小姐
@@ -220,29 +263,154 @@ export const MODES = [
 讲理
 承认错误`,
   },
+  {
+    id: 'daughter',
+    emoji: '👧',
+    nameZh: '女儿',
+    nameEn: 'Daughter',
+    summaryZh: '乖巧黏人，爱撒娇，称你「爸爸」。',
+    summaryEn: 'Sweet, clingy daughter who calls you Dad.',
+    accent: '#f472b6',
+    format: 'tags',
+    address: '爸爸',
+    selfName: '女儿',
+    tone: `【人格载入】
+女儿
+乖巧黏人
+爱撒娇
+会关心人
+偶尔闹小脾气但很快哄好`,
+  },
 ]
 
 /** 按 id 建立索引，避免每次查找都线性扫描。 */
 const MODE_BY_ID = new Map(MODES.map((mode) => [mode.id, mode]))
 
 /**
+ * 把「称呼 / 自称」写进标签块。
+ *
+ * 规则：
+ * - 已经有 `称呼…` / `自称…` 行时，就地替换；
+ * - 没有对应行时，在末尾追加；
+ * - `address` 已经在正文里出现过（例如 `永远服从主人`）时，不重复追加；
+ * - 空值表示删除该行，而不是保留旧值。
+ *
+ * @param {string} prompt 标签块正文。
+ * @param {string} address 称呼。
+ * @param {string} selfName 自称。
+ * @param {string} [defaultAddress] 覆盖前的默认称呼，用于把正文里的旧称呼一起换掉。
+ * @returns {string} 合成后的标签块正文。
+ */
+export function composePersonaBody(prompt, address, selfName, defaultAddress = '') {
+  const body = typeof prompt === 'string' ? prompt : ''
+  const addr = typeof address === 'string' ? address.trim() : ''
+  const self = typeof selfName === 'string' ? selfName.trim() : ''
+  const oldAddr = typeof defaultAddress === 'string' ? defaultAddress.trim() : ''
+
+  let text = body
+  if (addr !== '' && oldAddr !== '' && addr !== oldAddr) {
+    text = text.split(oldAddr).join(addr)
+  }
+
+  // 非标签式（自然语言）提示词不解析行首的「称呼/自称」，避免误伤普通句子；
+  // 直接把两个字段追加到末尾。
+  if (!text.trimStart().startsWith('【人格载入】')) {
+    const suffix = []
+    if (self !== '') suffix.push(`自称${self}`)
+    if (addr !== '') suffix.push(`称呼${addr}`)
+    return [text.trim(), ...suffix].filter((line) => line !== '').join('\n')
+  }
+
+  const lines = text.split('\n')
+  const out = []
+  let hasAddress = false
+  let hasSelf = false
+  for (const line of lines) {
+    if (line.startsWith('称呼')) {
+      hasAddress = true
+      if (addr !== '') out.push(`称呼${addr}`)
+      continue
+    }
+    if (line.startsWith('自称')) {
+      hasSelf = true
+      if (self !== '') out.push(`自称${self}`)
+      continue
+    }
+    out.push(line)
+  }
+  if (self !== '' && !hasSelf) out.push(`自称${self}`)
+  if (addr !== '' && !hasAddress && !text.includes(addr)) out.push(`称呼${addr}`)
+  return out.join('\n').replace(/^\n+/u, '').replace(/\n+$/u, '')
+}
+
+/**
+ * 解析一个模式在给定状态下的有效值。
+ *
+ * 内置模式从 `MODES` 取默认值，再叠加 `state.overrides[id]`；自定义模式从
+ * `state.customModes` 取 `values`，并带回 `defaults` 供「恢复默认」使用。
+ *
+ * @param {string} id 模式 id。
+ * @param {object} [state] 状态快照（`{ overrides, customModes }`）。
+ * @returns {object | undefined} 有效模式；未知 id 返回 undefined。
+ */
+export function resolveMode(id, state = {}) {
+  const builtin = MODE_BY_ID.get(id)
+  if (builtin !== undefined) {
+    const override = state?.overrides?.[id]
+    const address = typeof override?.address === 'string' ? override.address : builtin.address
+    const selfName = typeof override?.selfName === 'string' ? override.selfName : builtin.selfName
+    const prompt = typeof override?.prompt === 'string' ? override.prompt : builtin.tone
+    return {
+      ...builtin,
+      address,
+      selfName,
+      prompt,
+      defaults: { address: builtin.address, selfName: builtin.selfName, prompt: builtin.tone },
+      custom: false,
+    }
+  }
+
+  const custom = Array.isArray(state?.customModes)
+    ? state.customModes.find((mode) => mode.id === id)
+    : undefined
+  if (custom !== undefined) {
+    const values = custom.values ?? custom.defaults
+    return {
+      ...custom,
+      address: values.address,
+      selfName: values.selfName,
+      prompt: values.prompt,
+      defaults: { ...custom.defaults },
+      custom: true,
+    }
+  }
+  return undefined
+}
+
+/**
  * 取一个模式定义。
  *
  * @param {string} id 模式 id。
- * @returns {(typeof MODES)[number] | undefined} 找到的定义；未知 id 返回 undefined。
+ * @param {object} [state] 状态快照。
+ * @returns {object | undefined} 找到的定义；未知 id 返回 undefined。
  */
-export function getMode(id) {
-  return typeof id === 'string' ? MODE_BY_ID.get(id) : undefined
+export function getMode(id, state = {}) {
+  return resolveMode(id, state)
 }
 
 /**
  * 判断一个值是不是受支持的模式 id。
  *
+ * 内置 id 恒为合法；自定义 id 需要出现在 `state.customModes` 里。
+ *
  * @param {unknown} id 待检查的值。
- * @returns {boolean} 是否为内置模式。
+ * @param {object} [state] 状态快照。
+ * @returns {boolean} 是否为可用模式。
  */
-export function isModeId(id) {
-  return typeof id === 'string' && MODE_BY_ID.has(id)
+export function isModeId(id, state = {}) {
+  if (typeof id !== 'string') return false
+  if (MODE_BY_ID.has(id)) return true
+  return Array.isArray(state?.customModes) && state.customModes.some((mode) => mode.id === id)
 }
 
 /**
@@ -253,11 +421,12 @@ export function isModeId(id) {
  *
  * @param {unknown} value 原始值。
  * @param {string} [fallback] 回落模式 id，默认 `off`。
+ * @param {object} [state] 状态快照。
  * @returns {string} 一定合法的模式 id。
  */
-export function normalizeModeId(value, fallback = DEFAULT_MODE_ID) {
-  if (isModeId(value)) return value
-  return isModeId(fallback) ? fallback : DEFAULT_MODE_ID
+export function normalizeModeId(value, fallback = DEFAULT_MODE_ID, state = {}) {
+  if (isModeId(value, state)) return value
+  return isModeId(fallback, state) ? fallback : DEFAULT_MODE_ID
 }
 
 /**
@@ -267,41 +436,54 @@ export function normalizeModeId(value, fallback = DEFAULT_MODE_ID) {
  * 不会给每次请求增加任何字符。
  *
  * @param {string} id 模式 id。
+ * @param {object} [state] 状态快照。
  * @returns {string} 提示词文本；关闭或未知模式为空串。
  */
-export function renderPersonaPrompt(id) {
-  const mode = getMode(id)
-  if (mode === undefined || mode.tone === '') return ''
-  return `【人格模式：${mode.nameZh}】\n${mode.tone}\n${PERSONA_BOUNDARY}`
+export function renderPersonaPrompt(id, state = {}) {
+  const mode = resolveMode(id, state)
+  if (mode === undefined) return ''
+  if (mode.prompt === '' && mode.address === '' && mode.selfName === '') return ''
+  const body = composePersonaBody(mode.prompt, mode.address, mode.selfName, mode.defaults.address)
+  return `【人格模式：${mode.nameZh}】\n${body}\n${PERSONA_BOUNDARY}`
 }
 
 /**
  * 生成给客户端的状态/列表视图。
  *
- * 这里一次性把展示字段、实际注入文本与字数算好，避免客户端和服务端各算一套
- * 导致「设置页写 90 字、实际注入 120 字」。`prompt` 只用于设置页预览，
- * 不含任何用户数据。
+ * 这里一次性把展示字段、实际注入文本、字数与编辑用默认值算好，避免客户端和
+ * 服务端各算一套导致「设置页写 90 字、实际注入 120 字」。`prompt` 只用于设置页
+ * 预览，不含任何用户数据。
  *
  * @param {string} activeId 当前模式 id。
- * @returns {{ active: string, modes: Array<object> }} 客户端视图。
+ * @param {object} [state] 状态快照。
+ * @returns {{ active: string, modes: Array<object>, customDefaults: object }} 客户端视图。
  */
-export function buildModesView(activeId) {
-  const active = normalizeModeId(activeId)
+export function buildModesView(activeId, state = {}) {
+  const customModes = Array.isArray(state?.customModes) ? state.customModes : []
+  const ids = [...MODES.map((mode) => mode.id), ...customModes.map((mode) => mode.id)]
+  const modes = ids.map((id) => {
+    const mode = resolveMode(id, state)
+    const prompt = renderPersonaPrompt(id, state)
+    return {
+      id: mode.id,
+      emoji: mode.emoji,
+      nameZh: mode.nameZh,
+      nameEn: mode.nameEn,
+      summaryZh: mode.summaryZh,
+      summaryEn: mode.summaryEn,
+      accent: mode.accent,
+      prompt,
+      chars: prompt.length,
+      custom: mode.custom,
+      address: mode.address,
+      selfName: mode.selfName,
+      body: mode.prompt,
+      defaults: mode.defaults,
+    }
+  })
   return {
-    active,
-    modes: MODES.map((mode) => {
-      const prompt = renderPersonaPrompt(mode.id)
-      return {
-        id: mode.id,
-        emoji: mode.emoji,
-        nameZh: mode.nameZh,
-        nameEn: mode.nameEn,
-        summaryZh: mode.summaryZh,
-        summaryEn: mode.summaryEn,
-        accent: mode.accent,
-        prompt,
-        chars: prompt.length,
-      }
-    }),
+    active: normalizeModeId(activeId, DEFAULT_MODE_ID, state),
+    modes,
+    customDefaults: { ...CUSTOM_PERSONA_DEFAULTS },
   }
 }

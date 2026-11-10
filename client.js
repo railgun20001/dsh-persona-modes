@@ -59,6 +59,27 @@ window.__ModuleLoader__.load({
       warningNotPersisted: '已在本次运行内生效，但状态文件写入失败；重启后会恢复原模式。',
       retrySave: '重试保存',
       preview: '查看当前提示词',
+      edit: '编辑',
+      createCustom: '新建自定义人格',
+      editorEditTitle: '编辑人格',
+      editorCreateTitle: '新建自定义人格',
+      name: '名称',
+      emoji: '图标',
+      address: '称呼',
+      selfName: '自称',
+      promptBody: '提示词',
+      save: '保存',
+      saving: '保存中…',
+      reset: '恢复默认',
+      cancel: '取消',
+      delete: '删除',
+      customBadge: '自定义',
+      builtinBadge: '内置',
+      editorHint: '称呼和自称会写进标签块；提示词可用中文标签，也可以写自然语言。',
+      editorDefault: '默认：称呼 {address} / 自称 {selfName}',
+      deleteConfirm: '确定删除「{name}」吗？',
+      saveFailed: '保存失败，请重试。',
+      deleteFailed: '删除失败，请重试。',
       loading: '正在读取模式…',
       switching: '切换中…',
       retry: '重试',
@@ -85,6 +106,27 @@ window.__ModuleLoader__.load({
       warningNotPersisted: 'Applied for this run, but the state file could not be written; the previous mode will return after a restart.',
       retrySave: 'Retry save',
       preview: 'Show the active prompt',
+      edit: 'Edit',
+      createCustom: 'New custom persona',
+      editorEditTitle: 'Edit persona',
+      editorCreateTitle: 'New custom persona',
+      name: 'Name',
+      emoji: 'Icon',
+      address: 'Calls you',
+      selfName: 'Calls itself',
+      promptBody: 'Prompt',
+      save: 'Save',
+      saving: 'Saving…',
+      reset: 'Reset to default',
+      cancel: 'Cancel',
+      delete: 'Delete',
+      customBadge: 'Custom',
+      builtinBadge: 'Built-in',
+      editorHint: 'Address and self-name are written into the tag block; the prompt can be tags or plain language.',
+      editorDefault: 'Default: address {address} / self-name {selfName}',
+      deleteConfirm: 'Delete “{name}”?',
+      saveFailed: 'Could not save. Please try again.',
+      deleteFailed: 'Could not delete. Please try again.',
       loading: 'Loading modes…',
       switching: 'Switching…',
       retry: 'Retry',
@@ -266,7 +308,7 @@ window.__ModuleLoader__.load({
      * @param {object} props 组件属性。
      * @returns {object} React 元素。
      */
-    function CurrentBar({ t, localeId, mode, pending }) {
+    function CurrentBar({ t, localeId, mode, pending, onEdit }) {
       const isOff = mode.id === 'off'
       const prompt = typeof mode.prompt === 'string' ? mode.prompt : ''
       const chars = typeof mode.chars === 'number' ? mode.chars : 0
@@ -284,9 +326,20 @@ window.__ModuleLoader__.load({
             h('strong', { className: 'pm-current-name' }, modeName(mode, localeId)),
           ),
           h(
-            'span',
-            { className: 'pm-current-hint' },
-            pending ? t('switching') : isOff ? t('off') : t('nextTurn'),
+            'div',
+            { className: 'pm-current-side' },
+            h(
+              'span',
+              { className: 'pm-current-hint' },
+              pending ? t('switching') : isOff ? t('off') : t('nextTurn'),
+            ),
+            !isOff && typeof onEdit === 'function'
+              ? h(
+                  'button',
+                  { type: 'button', className: 'pm-edit', onClick: () => onEdit(mode) },
+                  t('edit'),
+                )
+              : null,
           ),
         ),
         chars > 0 && prompt !== ''
@@ -328,6 +381,9 @@ window.__ModuleLoader__.load({
             'span',
             { className: 'pm-name-row' },
             h('span', { className: 'pm-name' }, modeName(mode, localeId)),
+            mode.custom === true
+              ? h('span', { className: 'pm-badge pm-badge-custom' }, t('customBadge'))
+              : null,
             selected ? h('span', { className: 'pm-badge' }, t('active')) : null,
           ),
           h('span', { className: 'pm-desc' }, modeSummary(mode, localeId)),
@@ -342,19 +398,179 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * 人格编辑器：称呼、自称、提示词与默认值。
+     *
+     * 内置人格可以改称呼/自称/提示词，但不能改名和图标；自定义人格两者都能改。
+     *
+     * @param {object} props 组件属性。
+     * @returns {object} React 元素。
+     */
+    function PersonaEditor({
+      t,
+      editor,
+      busy,
+      error,
+      onChange,
+      onSave,
+      onReset,
+      onDelete,
+      onCancel,
+    }) {
+      const defaults = editor.defaults ?? { address: '', selfName: '', prompt: '' }
+      const isCustom = editor.custom === true
+      const isNew = editor.isNew === true
+      const update = (patch) => onChange({ ...editor, ...patch })
+      return h(
+        'div',
+        { className: 'pm-editor' },
+        h(
+          'div',
+          { className: 'pm-editor-head' },
+          h('h3', { className: 'pm-editor-title' }, isNew ? t('editorCreateTitle') : t('editorEditTitle')),
+          h(
+            'span',
+            { className: 'pm-badge pm-badge-custom' },
+            isCustom ? t('customBadge') : t('builtinBadge'),
+          ),
+        ),
+        h(
+          'div',
+          { className: 'pm-editor-grid' },
+          h(
+            'label',
+            { className: 'pm-field' },
+            h('span', { className: 'pm-field-label' }, t('name')),
+            h('input', {
+              className: 'pm-input',
+              value: editor.nameZh,
+              disabled: !isCustom,
+              maxLength: 40,
+              onChange: (event) => update({ nameZh: event.target.value }),
+            }),
+          ),
+          h(
+            'label',
+            { className: 'pm-field pm-field-narrow' },
+            h('span', { className: 'pm-field-label' }, t('emoji')),
+            h('input', {
+              className: 'pm-input',
+              value: editor.emoji,
+              disabled: !isCustom,
+              maxLength: 8,
+              onChange: (event) => update({ emoji: event.target.value }),
+            }),
+          ),
+          h(
+            'label',
+            { className: 'pm-field' },
+            h('span', { className: 'pm-field-label' }, t('address')),
+            h('input', {
+              className: 'pm-input',
+              value: editor.address,
+              maxLength: 40,
+              onChange: (event) => update({ address: event.target.value }),
+            }),
+          ),
+          h(
+            'label',
+            { className: 'pm-field' },
+            h('span', { className: 'pm-field-label' }, t('selfName')),
+            h('input', {
+              className: 'pm-input',
+              value: editor.selfName,
+              maxLength: 40,
+              onChange: (event) => update({ selfName: event.target.value }),
+            }),
+          ),
+        ),
+        h(
+          'label',
+          { className: 'pm-field' },
+          h('span', { className: 'pm-field-label' }, t('promptBody')),
+          h('textarea', {
+            className: 'pm-textarea',
+            value: editor.body,
+            rows: 8,
+            maxLength: 4000,
+            onChange: (event) => update({ body: event.target.value }),
+          }),
+        ),
+        h('p', { className: 'pm-editor-hint' }, t('editorHint')),
+        h(
+          'p',
+          { className: 'pm-editor-default' },
+          t('editorDefault', {
+            address: defaults.address === '' ? '—' : defaults.address,
+            selfName: defaults.selfName === '' ? '—' : defaults.selfName,
+          }),
+        ),
+        error === null || error === undefined ? null : h('p', { className: 'pm-editor-error' }, error),
+        h(
+          'div',
+          { className: 'pm-editor-actions' },
+          h('button', { type: 'button', className: 'pm-primary', disabled: busy, onClick: onSave }, busy ? t('saving') : t('save')),
+          h('button', { type: 'button', className: 'pm-secondary', disabled: busy, onClick: onReset }, t('reset')),
+          h('button', { type: 'button', className: 'pm-secondary', disabled: busy, onClick: onCancel }, t('cancel')),
+          isCustom && !isNew
+            ? h('button', { type: 'button', className: 'pm-danger', disabled: busy, onClick: onDelete }, t('delete'))
+            : null,
+        ),
+      )
+    }
+
+    /**
      * 纯展示视图：不发起请求，方便测试与后续复用。
      *
      * @param {object} props 组件属性。
      * @returns {object} React 元素。
      */
     function PersonaView(props) {
-      const { t, localeId, data, pendingId, error, warning, onSelect, onRetry, onRetrySave } = props
+      const {
+        t,
+        localeId,
+        data,
+        pendingId,
+        error,
+        warning,
+        editor,
+        editorBusy,
+        editorError,
+        onSelect,
+        onRetry,
+        onRetrySave,
+        onEdit,
+        onCreate,
+        onEditorChange,
+        onSave,
+        onReset,
+        onDelete,
+        onCancelEdit,
+      } = props
       const active = data.modes.find((mode) => mode.id === data.active) ?? data.modes[0]
       return h(
         'div',
         { className: 'pm-root' },
         h(Hero, { t }),
-        h(CurrentBar, { t, localeId, mode: active, pending: pendingId !== null }),
+        h(CurrentBar, {
+          t,
+          localeId,
+          mode: active,
+          pending: pendingId !== null,
+          onEdit,
+        }),
+        editor
+          ? h(PersonaEditor, {
+              t,
+              editor,
+              busy: editorBusy === true,
+              error: editorError,
+              onChange: onEditorChange,
+              onSave,
+              onReset,
+              onDelete,
+              onCancel: onCancelEdit,
+            })
+          : null,
         warning === null || warning === undefined
           ? null
           : h(
@@ -387,7 +603,16 @@ window.__ModuleLoader__.load({
             }),
           ),
         ),
-        h('div', { className: 'pm-foot' }, h('p', { className: 'pm-note' }, t('note'))),
+        h(
+          'div',
+          { className: 'pm-foot' },
+          h('p', { className: 'pm-note' }, t('note')),
+          h(
+            'button',
+            { type: 'button', className: 'pm-create', onClick: onCreate },
+            t('createCustom'),
+          ),
+        ),
       )
     }
 
@@ -403,6 +628,9 @@ window.__ModuleLoader__.load({
       const localeId = useLocaleId(locale)
       const [view, setView] = react.useState({ phase: 'loading', data: null, error: null, warning: null })
       const [pendingId, setPendingId] = react.useState(null)
+      const [editor, setEditor] = react.useState(null)
+      const [editorBusy, setEditorBusy] = react.useState(false)
+      const [editorError, setEditorError] = react.useState(null)
 
       /** 重新读取宿主状态；错误时进入统一错误态，用户可点「重试」。 */
       const load = async () => {
@@ -443,11 +671,133 @@ window.__ModuleLoader__.load({
             error: null,
             warning: data.persisted === false ? 'not-persisted' : null,
           })
+          setEditor(null)
+          setEditorError(null)
         } catch (error) {
           setView((current) => ({ ...current, error, warning: null }))
         } finally {
           setPendingId(null)
         }
+      }
+
+      const openEditor = (mode) => {
+        setEditor({
+          modeId: mode.id,
+          isNew: false,
+          custom: mode.custom === true,
+          nameZh: mode.nameZh,
+          emoji: mode.emoji,
+          address: mode.address ?? '',
+          selfName: mode.selfName ?? '',
+          body: mode.body ?? '',
+          defaults: mode.defaults ?? { address: '', selfName: '', prompt: '' },
+        })
+        setEditorError(null)
+      }
+
+      const openCreate = () => {
+        const defaults = view.data?.customDefaults ?? {
+          nameZh: '自定义人格',
+          emoji: '🧩',
+          address: '你',
+          selfName: '我',
+          prompt: '【人格载入】\n自定义人格\n性格温和',
+        }
+        setEditor({
+          modeId: null,
+          isNew: true,
+          custom: true,
+          nameZh: defaults.nameZh,
+          emoji: defaults.emoji,
+          address: defaults.address,
+          selfName: defaults.selfName,
+          body: defaults.prompt,
+          defaults: {
+            address: defaults.address,
+            selfName: defaults.selfName,
+            prompt: defaults.prompt,
+          },
+        })
+        setEditorError(null)
+      }
+
+      const changeEditor = (next) => {
+        setEditor(next)
+        setEditorError(null)
+      }
+
+      const resetEditor = () => {
+        setEditor((current) =>
+          current === null
+            ? current
+            : {
+                ...current,
+                address: current.defaults.address,
+                selfName: current.defaults.selfName,
+                body: current.defaults.prompt,
+              },
+        )
+        setEditorError(null)
+      }
+
+      const saveEditor = async () => {
+        if (editor === null || editorBusy) return
+        setEditorBusy(true)
+        setEditorError(null)
+        try {
+          let data = normalizePayload(await postRoute('save', {
+            ...(editor.modeId === null ? {} : { id: editor.modeId }),
+            nameZh: editor.nameZh,
+            emoji: editor.emoji,
+            address: editor.address,
+            selfName: editor.selfName,
+            prompt: editor.body,
+          }))
+          if (editor.isNew && data.saved !== null && typeof data.saved?.id === 'string') {
+            data = normalizePayload(await postRoute('select', { id: data.saved.id }))
+          }
+          setView({
+            phase: 'ready',
+            data,
+            error: null,
+            warning: data.persisted === false ? 'not-persisted' : null,
+          })
+          setEditor(null)
+        } catch {
+          setEditorError(t('saveFailed'))
+        } finally {
+          setEditorBusy(false)
+        }
+      }
+
+      const deleteEditor = async () => {
+        if (editor === null || editor.modeId === null || editorBusy) return
+        const confirmed =
+          typeof window === 'undefined' ||
+          typeof window.confirm !== 'function' ||
+          window.confirm(t('deleteConfirm', { name: editor.nameZh }))
+        if (!confirmed) return
+        setEditorBusy(true)
+        setEditorError(null)
+        try {
+          const data = normalizePayload(await postRoute('delete', { id: editor.modeId }))
+          setView({
+            phase: 'ready',
+            data,
+            error: null,
+            warning: data.persisted === false ? 'not-persisted' : null,
+          })
+          setEditor(null)
+        } catch {
+          setEditorError(t('deleteFailed'))
+        } finally {
+          setEditorBusy(false)
+        }
+      }
+
+      const cancelEditor = () => {
+        setEditor(null)
+        setEditorError(null)
       }
 
       if (view.phase === 'loading') {
@@ -481,11 +831,21 @@ window.__ModuleLoader__.load({
         pendingId,
         error: view.error,
         warning: view.warning,
+        editor,
+        editorBusy,
+        editorError,
         onSelect: select,
         onRetry: load,
         onRetrySave: () => {
           if (view.data !== null) void select(view.data.active)
         },
+        onEdit: openEditor,
+        onCreate: openCreate,
+        onEditorChange: changeEditor,
+        onSave: saveEditor,
+        onReset: resetEditor,
+        onDelete: deleteEditor,
+        onCancelEdit: cancelEditor,
       })
     }
 
@@ -503,7 +863,10 @@ window.__ModuleLoader__.load({
       .pm-current-copy { display:flex; flex-direction:column; min-width:0; }
       .pm-current-label { color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
       .pm-current-name { font-size:15px; line-height:22px; font-weight:600; }
-      .pm-current-hint { margin-left:auto; color:var(--dsw-alias-label-tertiary); font-size:12px; white-space:nowrap; }
+      .pm-current-side { margin-left:auto; display:flex; align-items:center; gap:8px; }
+      .pm-current-hint { color:var(--dsw-alias-label-tertiary); font-size:12px; white-space:nowrap; }
+      .pm-edit { padding:3px 10px; border:1px solid var(--dsw-alias-border-l2); border-radius:6px; background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary); font:inherit; font-size:12px; cursor:pointer; }
+      .pm-edit:hover { background:var(--dsw-alias-interactive-bg-hover); }
       .pm-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
       .pm-card { display:flex; align-items:flex-start; gap:10px; width:100%; padding:12px; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-1); color:inherit; font:inherit; text-align:left; cursor:pointer; transition:background .15s ease,border-color .15s ease,box-shadow .15s ease; }
       .pm-card:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover); }
@@ -514,12 +877,35 @@ window.__ModuleLoader__.load({
       .pm-name-row { display:flex; align-items:center; gap:6px; }
       .pm-name { font-weight:600; font-size:14px; line-height:20px; }
       .pm-badge { padding:0 6px; border-radius:999px; background:color-mix(in srgb,var(--pm-accent,#d97706) 16%,transparent); color:var(--pm-accent,#d97706); font-size:10px; line-height:16px; font-weight:500; }
+      .pm-badge-custom { background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-secondary); }
       .pm-desc { color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; }
       .pm-meta { color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
       .pm-check { margin-left:auto; color:var(--pm-accent,#d97706); font-size:14px; line-height:20px; opacity:0; }
       .pm-card[aria-pressed="true"] .pm-check { opacity:1; }
       .pm-foot { display:flex; flex-direction:column; gap:8px; }
       .pm-note { margin:0; color:var(--dsw-alias-label-tertiary); font-size:12px; line-height:18px; }
+      .pm-create { align-self:flex-start; padding:7px 14px; border:1px dashed var(--dsw-alias-border-l2); border-radius:8px; background:transparent; color:var(--dsw-alias-label-secondary); font:inherit; font-size:12px; cursor:pointer; }
+      .pm-create:hover { background:var(--dsw-alias-interactive-bg-hover); color:var(--dsw-alias-label-primary); }
+      .pm-editor { display:flex; flex-direction:column; gap:10px; padding:14px; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-1); }
+      .pm-editor-head { display:flex; align-items:center; gap:8px; }
+      .pm-editor-title { margin:0; font-size:14px; line-height:20px; font-weight:600; }
+      .pm-editor-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+      .pm-field { display:flex; flex-direction:column; gap:4px; }
+      .pm-field-narrow { max-width:140px; }
+      .pm-field-label { color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; }
+      .pm-input, .pm-textarea { width:100%; box-sizing:border-box; padding:7px 10px; border:1px solid var(--dsw-alias-border-l2); border-radius:8px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-primary); font:inherit; font-size:13px; line-height:20px; }
+      .pm-input:disabled { opacity:.6; cursor:default; }
+      .pm-textarea { resize:vertical; min-height:120px; font-family:var(--ds-font-family-code); font-size:12px; line-height:18px; white-space:pre-wrap; }
+      .pm-editor-hint, .pm-editor-default { margin:0; color:var(--dsw-alias-label-tertiary); font-size:12px; line-height:18px; }
+      .pm-editor-error { margin:0; color:var(--dsw-alias-state-error-primary); font-size:12px; line-height:18px; }
+      .pm-editor-actions { display:flex; flex-wrap:wrap; gap:8px; }
+      .pm-primary, .pm-secondary, .pm-danger { padding:6px 14px; border:1px solid var(--dsw-alias-border-l2); border-radius:8px; font:inherit; font-size:12px; cursor:pointer; }
+      .pm-primary { background:var(--dsw-alias-label-primary); color:var(--dsw-alias-bg-layer-1); border-color:var(--dsw-alias-label-primary); }
+      .pm-primary:disabled, .pm-secondary:disabled, .pm-danger:disabled { opacity:.6; cursor:default; }
+      .pm-secondary { background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary); }
+      .pm-secondary:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover); }
+      .pm-danger { margin-left:auto; color:var(--dsw-alias-state-error-primary); border-color:var(--dsw-alias-state-error-primary); background:transparent; }
+      .pm-danger:hover:not(:disabled) { background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent); }
       .pm-current-details { border-top:1px solid var(--dsw-alias-border-l1); padding-top:8px; }
       .pm-current-summary { color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; cursor:pointer; }
       .pm-current-summary:hover { color:var(--dsw-alias-label-primary); }
@@ -532,7 +918,7 @@ window.__ModuleLoader__.load({
       .pm-warning-text { color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; }
       .pm-retry { margin-left:auto; padding:4px 10px; border:1px solid var(--dsw-alias-border-l2); border-radius:6px; background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary); font:inherit; font-size:12px; cursor:pointer; }
       .pm-retry:hover { background:var(--dsw-alias-interactive-bg-hover); }
-      @media (max-width:640px) { .pm-grid { grid-template-columns:1fr; } }
+      @media (max-width:640px) { .pm-grid { grid-template-columns:1fr; } .pm-editor-grid { grid-template-columns:1fr; } .pm-field-narrow { max-width:none; } }
     `
 
     /** 样式标签 id：重复加载时去重。 */

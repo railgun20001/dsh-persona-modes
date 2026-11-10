@@ -190,6 +190,8 @@ const tree = PersonaView({
   error: null,
   onSelect: (id) => selected.push(id),
   onRetry: () => {},
+  onEdit: () => {},
+  onCreate: () => {},
 })
 const elements = flatten(tree)
 const allText = textOf(tree)
@@ -203,6 +205,8 @@ assert.ok(allText.includes('大小姐'))
 assert.ok(allText.includes('当前'))
 assert.ok(allText.includes('约 112 字'))
 assert.ok(allText.includes('查看当前提示词'))
+assert.ok(allText.includes('编辑'))
+assert.ok(allText.includes('新建自定义人格'))
 
 // 「查看当前提示词」必须放在当前人格容器内部，而不是页面底部的说明区。
 const current = elements.find((node) => node.props?.className === 'pm-current')
@@ -217,6 +221,106 @@ assert.ok(
   !flatten(foot).some((node) => node.props?.className === 'pm-current-details'),
   '查看当前提示词仍留在底部说明区',
 )
+
+const editorTree = PersonaView({
+  t,
+  localeId: 'zh',
+  data,
+  pendingId: null,
+  error: null,
+  editor: {
+    modeId: 'catgirl',
+    isNew: false,
+    custom: false,
+    nameZh: '猫娘',
+    emoji: '🐱',
+    address: '主人',
+    selfName: '猫娘',
+    body: '【人格载入】\n猫科少女',
+    defaults: { address: '主人', selfName: '猫娘', prompt: '【人格载入】\n猫科少女' },
+  },
+  editorBusy: false,
+  editorError: null,
+  onSelect: () => {},
+  onRetry: () => {},
+  onRetrySave: () => {},
+  onEdit: () => {},
+  onCreate: () => {},
+  onEditorChange: () => {},
+  onSave: () => {},
+  onReset: () => {},
+  onDelete: () => {},
+  onCancelEdit: () => {},
+})
+const editorText = textOf(editorTree)
+assert.ok(editorText.includes('编辑人格'))
+assert.ok(editorText.includes('称呼'))
+assert.ok(editorText.includes('自称'))
+assert.ok(editorText.includes('提示词'))
+assert.ok(editorText.includes('恢复默认'))
+assert.ok(editorText.includes('保存'))
+
+let editedId = null
+let createdCount = 0
+const actionTree = PersonaView({
+  t,
+  localeId: 'zh',
+  data,
+  pendingId: null,
+  error: null,
+  onSelect: () => {},
+  onRetry: () => {},
+  onEdit: (mode) => {
+    editedId = mode.id
+  },
+  onCreate: () => {
+    createdCount += 1
+  },
+})
+const actionElements = flatten(actionTree)
+const editButton = actionElements.find((node) => node.props?.className === 'pm-edit')
+assert.ok(editButton, '没有渲染编辑按钮')
+editButton.props.onClick()
+assert.equal(editedId, 'catgirl')
+const createButton = actionElements.find((node) => node.props?.className === 'pm-create')
+assert.ok(createButton, '没有渲染新建自定义按钮')
+createButton.props.onClick()
+assert.equal(createdCount, 1)
+
+let savedCount = 0
+const saveTree = PersonaView({
+  t,
+  localeId: 'zh',
+  data,
+  pendingId: null,
+  error: null,
+  editor: {
+    modeId: 'catgirl',
+    isNew: false,
+    custom: false,
+    nameZh: '猫娘',
+    emoji: '🐱',
+    address: '主人',
+    selfName: '猫娘',
+    body: '【人格载入】\n猫科少女',
+    defaults: { address: '主人', selfName: '猫娘', prompt: '【人格载入】\n猫科少女' },
+  },
+  editorBusy: false,
+  editorError: null,
+  onSelect: () => {},
+  onRetry: () => {},
+  onSave: () => {
+    savedCount += 1
+  },
+  onReset: () => {},
+  onDelete: () => {},
+  onCancelEdit: () => {},
+  onEditorChange: () => {},
+})
+const saveButton = flatten(saveTree).find((node) => node.type === 'button' && textOf(node) === '保存')
+assert.ok(saveButton, '没有渲染保存按钮')
+saveButton.props.onClick()
+assert.equal(savedCount, 1)
 
 const card = elements.find((node) => node.type === 'button' && node.props?.['aria-pressed'] === 'true')
 assert.ok(card, '没有渲染出选中卡片')

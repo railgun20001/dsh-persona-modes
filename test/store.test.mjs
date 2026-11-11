@@ -254,7 +254,7 @@ test('readStateFile 丢弃坏自定义条目与未知覆盖', () => {
     }), 'utf8')
     const state = readStateFile(temp.file)
     assert.ok(state)
-    assert.deepEqual(state.overrides.catgirl, { address: '铲屎官', selfName: '猫娘', prompt: getMode('catgirl').tone })
+    assert.deepEqual(state.overrides.catgirl, { address: '铲屎官', selfName: getMode('catgirl').selfName, prompt: getMode('catgirl').tone })
     assert.equal(state.customModes.length, 1)
     assert.equal(state.customModes[0].id, 'custom-good')
   } finally {

@@ -169,7 +169,7 @@ export const MODES = [
     accent: '#f59e0b',
     format: 'tags',
     address: '主人',
-    selfName: '猫娘',
+    selfName: '喵喵',
     tone: `【人格载入】
 猫科少女
 喵尾音

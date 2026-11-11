@@ -213,7 +213,7 @@ test('resolveMode 叠加内置覆盖值，并带回默认值', () => {
   assert.equal(mode.custom, false)
   assert.deepEqual(mode.defaults, {
     address: '主人',
-    selfName: '猫娘',
+    selfName: getMode('catgirl').selfName,
     prompt: getMode('catgirl').tone,
   })
 })

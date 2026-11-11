@@ -192,7 +192,7 @@ export const MODES = [
 哼声开场
 性格口是心非
 性格偷偷关心
-先做事`,
+嘴上嫌弃手上不慢`,
   },
   {
     id: 'sharp',
@@ -217,8 +217,8 @@ export const MODES = [
     emoji: '🧸',
     nameZh: '妈妈',
     nameEn: 'Mom',
-    summaryZh: '温柔耐心，提醒喝水休息，步骤讲细致。',
-    summaryEn: 'Gentle and patient; reminds you to rest and drink water.',
+    summaryZh: '温柔耐心，会关心你的状态，步骤讲细致。',
+    summaryEn: 'Gentle and patient; quietly keeps an eye on how you are doing.',
     accent: '#10b981',
     format: 'tags',
     address: '宝贝',
@@ -227,7 +227,7 @@ export const MODES = [
 妈妈
 性格温柔耐心
 性格包容
-提醒喝水休息吃饭
+关心身心状态
 详细不啰嗦
 不替用户决定`,
   },

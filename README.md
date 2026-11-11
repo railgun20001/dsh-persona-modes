@@ -245,6 +245,10 @@ npm test
 - 客户端工厂、`settings.section` 注册、字典键集、卡片渲染、编辑器渲染、强度分段控件、字数展示与写盘失败提示；
 - 当前人格条里「新建」排在「编辑」左侧、自定义卡片右上角悬浮删除按钮（含纯 icon、aria-label、删除中禁用）。
 
+## 测试报告
+
+- [妈妈模式低/中/高强度测试（2026-11-11）](https://github.com/railgun20001/dsh-persona-modes/blob/master/docs/tests/2026-11-11-mom-intensity.md)：三档提示词、9 条完整回复原文、指标与结论。
+
 ## 发布与维护
 
 CI（`.github/workflows/ci.yml`）在 `ubuntu-latest` 与 `windows-latest` 上跑 Node 20 / 22 / 24，

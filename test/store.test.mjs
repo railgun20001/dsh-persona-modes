@@ -133,9 +133,24 @@ test('readStateFile 接受合法文件并迁移 v1 形状', () => {
     assert.deepEqual(readStateFile(temp.file), {
       version: 2,
       active: 'whale',
+      intensity: 'low',
       overrides: {},
       customModes: [],
     })
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('setIntensity 默认低、写入并持久化、坏值回落', () => {
+  const temp = tempState()
+  try {
+    const store = createStore({ file: temp.file })
+    assert.equal(store.getIntensity(), 'low')
+    assert.deepEqual(store.setIntensity('medium'), { intensity: 'medium', persisted: true })
+    assert.equal(createStore({ file: temp.file }).getIntensity(), 'medium')
+    assert.deepEqual(store.setIntensity('nope'), { intensity: 'low', persisted: true })
+    assert.equal(store.getIntensity(), 'low')
   } finally {
     temp.cleanup()
   }
@@ -255,6 +270,7 @@ test('writeStateFile 在目标目录不存在时会创建目录', () => {
     assert.deepEqual(readStateFile(nested), {
       version: 2,
       active: 'sharp',
+      intensity: 'low',
       overrides: {},
       customModes: [],
     })

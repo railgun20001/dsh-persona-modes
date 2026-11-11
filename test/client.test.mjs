@@ -207,6 +207,10 @@ assert.ok(allText.includes('约 112 字'))
 assert.ok(allText.includes('查看当前提示词'))
 assert.ok(allText.includes('编辑'))
 assert.ok(allText.includes('新建自定义人格'))
+assert.ok(allText.includes('语气强度'))
+assert.ok(allText.includes('低'))
+assert.ok(allText.includes('中'))
+assert.ok(allText.includes('高'))
 
 // 「查看当前提示词」必须放在当前人格容器内部，而不是页面底部的说明区。
 const current = elements.find((node) => node.props?.className === 'pm-current')
@@ -262,14 +266,19 @@ assert.ok(editorText.includes('保存'))
 
 let editedId = null
 let createdCount = 0
+let nextIntensity = null
 const actionTree = PersonaView({
   t,
   localeId: 'zh',
   data,
   pendingId: null,
   error: null,
+  intensity: 'low',
   onSelect: () => {},
   onRetry: () => {},
+  onIntensity: (value) => {
+    nextIntensity = value
+  },
   onEdit: (mode) => {
     editedId = mode.id
   },
@@ -286,6 +295,13 @@ const createButton = actionElements.find((node) => node.props?.className === 'pm
 assert.ok(createButton, '没有渲染新建自定义按钮')
 createButton.props.onClick()
 assert.equal(createdCount, 1)
+
+const mediumButton = actionElements.find(
+  (node) => node.type === 'button' && node.props?.className === 'pm-segment' && textOf(node) === '中',
+)
+assert.ok(mediumButton, '没有渲染「中」档强度按钮')
+mediumButton.props.onClick()
+assert.equal(nextIntensity, 'medium')
 
 let savedCount = 0
 const saveTree = PersonaView({
@@ -322,7 +338,9 @@ assert.ok(saveButton, '没有渲染保存按钮')
 saveButton.props.onClick()
 assert.equal(savedCount, 1)
 
-const card = elements.find((node) => node.type === 'button' && node.props?.['aria-pressed'] === 'true')
+const card = elements.find(
+  (node) => node.type === 'button' && node.props?.className === 'pm-card' && node.props?.['aria-pressed'] === 'true',
+)
 assert.ok(card, '没有渲染出选中卡片')
 card.props.onClick()
 assert.deepEqual(selected, ['catgirl'])

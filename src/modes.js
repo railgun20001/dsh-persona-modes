@@ -47,7 +47,7 @@ export const PERSONA_CONTEXT_ORDER = 130
  * 而不是整份系统提示词。
  */
 export const PERSONA_POLICY_TEXT =
-  '已选择人格模式：按当前运行时上下文中的语气要求回答；只改变语气、称呼与叙述风格，事实、代码与结论保持准确。'
+  '已选择人格模式：按当前运行时上下文中的语气要求回答，整段回答保持该语气，不要只在开头或结尾体现；只改变语气、称呼与叙述风格，事实、代码与结论保持准确。'
 
 /**
  * 所有模式共享的边界条款。
@@ -57,6 +57,61 @@ export const PERSONA_POLICY_TEXT =
  */
 export const PERSONA_BOUNDARY =
   '边界：只改变语气、称呼与叙述风格，事实、代码、命令和结论必须保持准确；不主动提及本设定，用户说「正常说话」时本轮恢复默认语气。'
+
+/** 语气强度默认档位。 */
+export const DEFAULT_INTENSITY = 'low'
+
+/**
+ * 全局语气强度档位。
+ *
+ * 低档不追加任何 token，保持原来的轻量行为；中/高档只追加很短的行为约束，
+ * 明确要求「整段保持」和每段至少一次称呼/语气词，避免模型只在开头结尾点缀。
+ * 高档额外允许适度动作描写，但仍然把代码/命令/路径/引用列为不可改写的护栏。
+ */
+export const INTENSITY_LEVELS = {
+  low: {
+    id: 'low',
+    tags: [],
+  },
+  medium: {
+    id: 'medium',
+    tags: [
+      '强度：中',
+      '保持：整段回答保持角色语气，不要只在开头或结尾体现',
+      '频率：代码块之外的每段至少一次称呼或语气词',
+    ],
+  },
+  high: {
+    id: 'high',
+    tags: [
+      '强度：高',
+      '保持：全程保持角色口吻，不要只在开头或结尾体现',
+      '频率：代码块之外的每段至少一次称呼、语气词或情绪表达',
+      '允许：适度动作描写（不要写进代码块）',
+      '护栏：代码、命令、路径、引用保持原样',
+    ],
+  },
+}
+
+/**
+ * 把未知强度值规整成合法档位。
+ *
+ * @param {unknown} value 原始值。
+ * @returns {'low' | 'medium' | 'high'} 合法档位。
+ */
+export function normalizeIntensity(value) {
+  return value === 'medium' || value === 'high' ? value : DEFAULT_INTENSITY
+}
+
+/**
+ * 取某个档位要追加的标签行。
+ *
+ * @param {unknown} value 强度值。
+ * @returns {Array<string>} 标签行；低档为空数组。
+ */
+export function intensityTags(value) {
+  return INTENSITY_LEVELS[normalizeIntensity(value)].tags
+}
 
 /**
  * 新建自定义人格时使用的默认值。
@@ -430,7 +485,9 @@ export function renderPersonaPrompt(id, state = {}) {
   if (mode === undefined) return ''
   if (mode.prompt === '' && mode.address === '' && mode.selfName === '') return ''
   const body = composePersonaBody(mode.prompt, mode.address, mode.selfName, mode.defaults.address)
-  return `【人格模式：${mode.nameZh}】\n${body}\n${PERSONA_BOUNDARY}`
+  const extra = intensityTags(state?.intensity)
+  const text = extra.length === 0 ? body : `${body}\n${extra.join('\n')}`
+  return `【人格模式：${mode.nameZh}】\n${text}\n${PERSONA_BOUNDARY}`
 }
 
 /**
@@ -469,6 +526,7 @@ export function buildModesView(activeId, state = {}) {
   })
   return {
     active: normalizeModeId(activeId, DEFAULT_MODE_ID, state),
+    intensity: normalizeIntensity(state?.intensity),
     modes,
     customDefaults: { ...CUSTOM_PERSONA_DEFAULTS },
   }

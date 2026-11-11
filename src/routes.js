@@ -136,6 +136,7 @@ export function buildStatePayload(store, version) {
     host: PLUGIN_ID,
     version,
     active: view.active,
+    intensity: view.intensity,
     modes: view.modes,
     customDefaults: view.customDefaults,
   }
@@ -148,6 +149,7 @@ export function buildStatePayload(store, version) {
  * - `POST /dsh-persona-modes/ping`：宿主半探针（无副作用）；
  * - `POST /dsh-persona-modes/state`：读取当前模式、全部模式与自定义模板；
  * - `POST /dsh-persona-modes/select`：切换模式，body `{ "id": "catgirl" }`；
+ * - `POST /dsh-persona-modes/intensity`：切换全局语气强度，body `{ "value": "low|medium|high" }`；
  * - `POST /dsh-persona-modes/save`：保存称呼/自称/提示词，带 `id` 改已有模式，不带 `id` 新建自定义；
  * - `POST /dsh-persona-modes/reset`：恢复默认值，body `{ "id": "catgirl" }`；
  * - `POST /dsh-persona-modes/delete`：删除自定义人格，body `{ "id": "custom-..." }`；
@@ -208,6 +210,22 @@ export function createRouteHandler(store, options = {}) {
           respond(res, 400, { ok: false, error: 'unknown-mode' })
           return
         }
+        const payload = buildStatePayload(store, version)
+        respond(res, 200, {
+          ...payload,
+          ...(result.persisted ? {} : { persisted: false }),
+        })
+      })
+      return
+    }
+
+    if (action === 'intensity') {
+      void readJsonBody(req).then((parsed) => {
+        if (!parsed.ok) {
+          respond(res, parsed.reason === 'too-large' ? 413 : 400, { ok: false, error: parsed.reason })
+          return
+        }
+        const result = store.setIntensity(parsed.value.value)
         const payload = buildStatePayload(store, version)
         respond(res, 200, {
           ...payload,

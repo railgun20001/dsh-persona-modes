@@ -109,6 +109,25 @@ test('除默认模式外，所有模式都使用中文直译标签', () => {
   }
 })
 
+test('语气强度档位追加不同标签，低档不追加', () => {
+  const low = renderPersonaPrompt('catgirl', { intensity: 'low' })
+  const medium = renderPersonaPrompt('catgirl', { intensity: 'medium' })
+  const high = renderPersonaPrompt('catgirl', { intensity: 'high' })
+  assert.doesNotMatch(low, /强度：/u)
+  assert.match(medium, /强度：中/u)
+  assert.match(medium, /每段至少一次称呼或语气词/u)
+  assert.match(high, /强度：高/u)
+  assert.match(high, /适度动作描写/u)
+  assert.match(high, /代码、命令、路径、引用保持原样/u)
+  assert.ok(low.length < medium.length)
+  assert.ok(medium.length < high.length)
+})
+
+test('人格策略段要求整段保持语气', () => {
+  assert.match(PERSONA_POLICY_TEXT, /整段回答保持该语气/u)
+  assert.match(PERSONA_POLICY_TEXT, /不要只在开头或结尾体现/u)
+})
+
 test('内置标签块不再写死称呼/自称，由配置统一追加', () => {
   for (const mode of MODES) {
     if (mode.id === 'off') continue

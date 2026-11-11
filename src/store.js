@@ -24,9 +24,11 @@ import { dirname, join } from 'node:path'
 
 import {
   CUSTOM_PERSONA_DEFAULTS,
+  DEFAULT_INTENSITY,
   DEFAULT_MODE_ID,
   getMode,
   isModeId,
+  normalizeIntensity,
   normalizeModeId,
 } from './modes.js'
 
@@ -198,6 +200,7 @@ export function readStateFile(file = STATE_FILE) {
     return {
       version: STATE_VERSION,
       active: parsed.active,
+      intensity: normalizeIntensity(parsed.intensity),
       overrides,
       customModes,
       ...(typeof parsed.updatedAt === 'string' ? { updatedAt: parsed.updatedAt } : {}),
@@ -264,6 +267,7 @@ export function createStore(options = {}) {
   let state = loaded ?? {
     version: STATE_VERSION,
     active: fallback,
+    intensity: DEFAULT_INTENSITY,
     overrides: {},
     customModes: [],
   }
@@ -287,6 +291,29 @@ export function createStore(options = {}) {
     /** 当前模式 id。 */
     getActive() {
       return state.active
+    },
+
+    /** 当前语气强度。 */
+    getIntensity() {
+      return state.intensity
+    },
+
+    /**
+     * 设置全局语气强度。
+     *
+     * @param {unknown} value 目标档位。
+     * @returns {{ intensity: string, persisted: boolean }} 设置结果。
+     */
+    setIntensity(value) {
+      const intensity = normalizeIntensity(value)
+      if (intensity === state.intensity && persisted) return { intensity, persisted: true }
+      const next = {
+        ...state,
+        intensity,
+        updatedAt: new Date().toISOString(),
+      }
+      const wrote = commit(next)
+      return { intensity, persisted: wrote }
     },
 
     /**

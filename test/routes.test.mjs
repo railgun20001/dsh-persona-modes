@@ -204,6 +204,23 @@ test('select 超大 body 返回 413 而不是断连接', async () => {
   }
 })
 
+test('intensity 切换全局语气档位', async () => {
+  const temp = tempStore()
+  try {
+    const handler = createRouteHandler(temp.store, { version: '9.9.9' })
+    const result = await invoke(handler, makeRequest({
+      action: 'intensity',
+      headers: SIGNED,
+      body: JSON.stringify({ value: 'high' }),
+    }))
+    assert.equal(result.status, 200)
+    assert.equal(result.body.intensity, 'high')
+    assert.equal(temp.store.getIntensity(), 'high')
+  } finally {
+    temp.cleanup()
+  }
+})
+
 test('save 保存内置覆盖、reset 恢复默认', async () => {
   const temp = tempStore()
   try {

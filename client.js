@@ -59,6 +59,11 @@ window.__ModuleLoader__.load({
       warningNotPersisted: '已在本次运行内生效，但状态文件写入失败；重启后会恢复原模式。',
       retrySave: '重试保存',
       preview: '查看当前提示词',
+      intensity: '语气强度',
+      intensityLow: '低',
+      intensityMedium: '中',
+      intensityHigh: '高',
+      intensityHint: '统一控制所有角色；默认低。',
       edit: '编辑',
       createCustom: '新建自定义人格',
       editorEditTitle: '编辑人格',
@@ -106,6 +111,11 @@ window.__ModuleLoader__.load({
       warningNotPersisted: 'Applied for this run, but the state file could not be written; the previous mode will return after a restart.',
       retrySave: 'Retry save',
       preview: 'Show the active prompt',
+      intensity: 'Persona intensity',
+      intensityLow: 'Low',
+      intensityMedium: 'Medium',
+      intensityHigh: 'High',
+      intensityHint: 'Applies to all personas; defaults to low.',
       edit: 'Edit',
       createCustom: 'New custom persona',
       editorEditTitle: 'Edit persona',
@@ -279,6 +289,9 @@ window.__ModuleLoader__.load({
         if (mode === null || typeof mode !== 'object') throw new Error('bad-payload')
         if (typeof mode.id !== 'string' || typeof mode.nameZh !== 'string') throw new Error('bad-payload')
       }
+      if (data.intensity !== 'low' && data.intensity !== 'medium' && data.intensity !== 'high') {
+        data.intensity = 'low'
+      }
       return data
     }
 
@@ -350,6 +363,47 @@ window.__ModuleLoader__.load({
               h('pre', { className: 'pm-prompt' }, prompt),
             )
           : null,
+      )
+    }
+
+    /**
+     * 全局语气强度控制。
+     *
+     * @param {object} props 组件属性。
+     * @returns {object} React 元素。
+     */
+    function IntensityBar({ t, value, pending, onChange }) {
+      const current = value === 'medium' || value === 'high' ? value : 'low'
+      const options = [
+        { id: 'low', label: t('intensityLow') },
+        { id: 'medium', label: t('intensityMedium') },
+        { id: 'high', label: t('intensityHigh') },
+      ]
+      return h(
+        'div',
+        { className: 'pm-intensity' },
+        h('span', { className: 'pm-intensity-label' }, t('intensity')),
+        h(
+          'div',
+          { className: 'pm-segmented', role: 'group', 'aria-label': t('intensity') },
+          options.map((option) =>
+            h(
+              'button',
+              {
+                key: option.id,
+                type: 'button',
+                className: `pm-segment${current === option.id ? ' pm-segment-active' : ''}`,
+                'aria-pressed': current === option.id ? 'true' : 'false',
+                disabled: pending === true,
+                onClick: () => {
+                  if (typeof onChange === 'function') onChange(option.id)
+                },
+              },
+              option.label,
+            ),
+          ),
+        ),
+        h('span', { className: 'pm-intensity-hint' }, t('intensityHint')),
       )
     }
 
@@ -532,12 +586,15 @@ window.__ModuleLoader__.load({
         pendingId,
         error,
         warning,
+        intensity,
+        intensityPending,
         editor,
         editorBusy,
         editorError,
         onSelect,
         onRetry,
         onRetrySave,
+        onIntensity,
         onEdit,
         onCreate,
         onEditorChange,
@@ -557,6 +614,12 @@ window.__ModuleLoader__.load({
           mode: active,
           pending: pendingId !== null,
           onEdit,
+        }),
+        h(IntensityBar, {
+          t,
+          value: intensity,
+          pending: intensityPending === true,
+          onChange: onIntensity,
         }),
         editor
           ? h(PersonaEditor, {
@@ -631,6 +694,7 @@ window.__ModuleLoader__.load({
       const [editor, setEditor] = react.useState(null)
       const [editorBusy, setEditorBusy] = react.useState(false)
       const [editorError, setEditorError] = react.useState(null)
+      const [intensityPending, setIntensityPending] = react.useState(false)
 
       /** 重新读取宿主状态；错误时进入统一错误态，用户可点「重试」。 */
       const load = async () => {
@@ -677,6 +741,25 @@ window.__ModuleLoader__.load({
           setView((current) => ({ ...current, error, warning: null }))
         } finally {
           setPendingId(null)
+        }
+      }
+
+      const changeIntensity = async (value) => {
+        if (intensityPending) return
+        setIntensityPending(true)
+        setView((current) => ({ ...current, error: null, warning: null }))
+        try {
+          const data = normalizePayload(await postRoute('intensity', { value }))
+          setView({
+            phase: 'ready',
+            data,
+            error: null,
+            warning: data.persisted === false ? 'not-persisted' : null,
+          })
+        } catch (error) {
+          setView((current) => ({ ...current, error, warning: null }))
+        } finally {
+          setIntensityPending(false)
         }
       }
 
@@ -831,10 +914,13 @@ window.__ModuleLoader__.load({
         pendingId,
         error: view.error,
         warning: view.warning,
+        intensity: view.data?.intensity,
+        intensityPending,
         editor,
         editorBusy,
         editorError,
         onSelect: select,
+        onIntensity: changeIntensity,
         onRetry: load,
         onRetrySave: () => {
           if (view.data !== null) void select(view.data.active)
@@ -867,6 +953,14 @@ window.__ModuleLoader__.load({
       .pm-current-hint { color:var(--dsw-alias-label-tertiary); font-size:12px; white-space:nowrap; }
       .pm-edit { padding:3px 10px; border:1px solid var(--dsw-alias-border-l2); border-radius:6px; background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary); font:inherit; font-size:12px; cursor:pointer; }
       .pm-edit:hover { background:var(--dsw-alias-interactive-bg-hover); }
+      .pm-intensity { display:flex; align-items:center; flex-wrap:wrap; gap:8px 10px; }
+      .pm-intensity-label { color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; }
+      .pm-segmented { display:inline-flex; padding:2px; border:1px solid var(--dsw-alias-border-l2); border-radius:8px; background:var(--dsw-alias-bg-layer-2); }
+      .pm-segment { padding:4px 12px; border:0; border-radius:6px; background:transparent; color:var(--dsw-alias-label-secondary); font:inherit; font-size:12px; cursor:pointer; }
+      .pm-segment:hover:not(:disabled) { color:var(--dsw-alias-label-primary); }
+      .pm-segment-active { background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary); font-weight:600; }
+      .pm-segment:disabled { opacity:.6; cursor:default; }
+      .pm-intensity-hint { color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
       .pm-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
       .pm-card { display:flex; align-items:flex-start; gap:10px; width:100%; padding:12px; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-1); color:inherit; font:inherit; text-align:left; cursor:pointer; transition:background .15s ease,border-color .15s ease,box-shadow .15s ease; }
       .pm-card:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover); }

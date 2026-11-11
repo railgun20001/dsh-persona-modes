@@ -59,6 +59,11 @@ window.__ModuleLoader__.load({
       warningNotPersisted: '已在本次运行内生效，但状态文件写入失败；重启后会恢复原模式。',
       retrySave: '重试保存',
       preview: '查看当前提示词',
+      previewPolicy: '系统提示段',
+      previewRuntime: '运行时上下文',
+      previewOrder: '顺序 {order}',
+      previewTotal: '合计 {count} 字',
+      previewEmpty: '（不注入）',
       intensity: '语气强度',
       intensityLow: '低',
       intensityMedium: '中',
@@ -111,6 +116,11 @@ window.__ModuleLoader__.load({
       warningNotPersisted: 'Applied for this run, but the state file could not be written; the previous mode will return after a restart.',
       retrySave: 'Retry save',
       preview: 'Show the active prompt',
+      previewPolicy: 'System prompt section',
+      previewRuntime: 'Runtime context',
+      previewOrder: 'order {order}',
+      previewTotal: '{count} chars total',
+      previewEmpty: '(nothing injected)',
       intensity: 'Persona intensity',
       intensityLow: 'Low',
       intensityMedium: 'Medium',
@@ -292,6 +302,14 @@ window.__ModuleLoader__.load({
       if (data.intensity !== 'low' && data.intensity !== 'medium' && data.intensity !== 'high') {
         data.intensity = 'low'
       }
+      if (data.policy === null || typeof data.policy !== 'object') {
+        data.policy = { name: 'persona-modes:policy', text: '', chars: 0 }
+      }
+      if (typeof data.policy.text !== 'string') data.policy.text = ''
+      if (typeof data.policy.chars !== 'number') data.policy.chars = data.policy.text.length
+      if (data.runtime === null || typeof data.runtime !== 'object') {
+        data.runtime = { name: 'persona-modes:active' }
+      }
       return data
     }
 
@@ -321,10 +339,26 @@ window.__ModuleLoader__.load({
      * @param {object} props 组件属性。
      * @returns {object} React 元素。
      */
-    function CurrentBar({ t, localeId, mode, pending, onEdit }) {
+    function CurrentBar({ t, localeId, mode, policy, runtime, pending, onEdit }) {
       const isOff = mode.id === 'off'
       const prompt = typeof mode.prompt === 'string' ? mode.prompt : ''
       const chars = typeof mode.chars === 'number' ? mode.chars : 0
+      const policyText = typeof policy?.text === 'string' ? policy.text : ''
+      const policyChars = typeof policy?.chars === 'number' ? policy.chars : policyText.length
+      const policyName = typeof policy?.name === 'string' ? policy.name : 'persona-modes:policy'
+      const policyOrder = typeof policy?.order === 'number' ? policy.order : null
+      const runtimeName = typeof runtime?.name === 'string' ? runtime.name : 'persona-modes:active'
+      const runtimeOrder = typeof runtime?.order === 'number' ? runtime.order : null
+      const total = chars + policyChars
+      const label = (title, name, order, count) =>
+        [
+          title,
+          `· ${name}`,
+          order === null ? '' : `· ${t('previewOrder', { order })}`,
+          `· ${t('chars', { count })}`,
+        ]
+          .filter((part) => part !== '')
+          .join(' ')
       return h(
         'div',
         { className: 'pm-current' },
@@ -355,12 +389,36 @@ window.__ModuleLoader__.load({
               : null,
           ),
         ),
-        chars > 0 && prompt !== ''
+        !isOff && (prompt !== '' || policyText !== '')
           ? h(
               'details',
               { className: 'pm-current-details' },
               h('summary', { className: 'pm-current-summary' }, t('preview')),
-              h('pre', { className: 'pm-prompt' }, prompt),
+              h(
+                'div',
+                { className: 'pm-preview' },
+                h(
+                  'div',
+                  { className: 'pm-preview-layer' },
+                  h(
+                    'div',
+                    { className: 'pm-preview-label' },
+                    label(t('previewPolicy'), policyName, policyOrder, policyChars),
+                  ),
+                  h('pre', { className: 'pm-prompt' }, policyText === '' ? t('previewEmpty') : policyText),
+                ),
+                h(
+                  'div',
+                  { className: 'pm-preview-layer' },
+                  h(
+                    'div',
+                    { className: 'pm-preview-label' },
+                    label(t('previewRuntime'), runtimeName, runtimeOrder, chars),
+                  ),
+                  h('pre', { className: 'pm-prompt' }, prompt === '' ? t('previewEmpty') : prompt),
+                ),
+                h('div', { className: 'pm-preview-total' }, t('previewTotal', { count: total })),
+              ),
             )
           : null,
       )
@@ -588,6 +646,8 @@ window.__ModuleLoader__.load({
         warning,
         intensity,
         intensityPending,
+        policy,
+        runtime,
         editor,
         editorBusy,
         editorError,
@@ -604,6 +664,8 @@ window.__ModuleLoader__.load({
         onCancelEdit,
       } = props
       const active = data.modes.find((mode) => mode.id === data.active) ?? data.modes[0]
+      const policyData = policy ?? data.policy
+      const runtimeData = runtime ?? data.runtime
       return h(
         'div',
         { className: 'pm-root' },
@@ -612,6 +674,8 @@ window.__ModuleLoader__.load({
           t,
           localeId,
           mode: active,
+          policy: policyData,
+          runtime: runtimeData,
           pending: pendingId !== null,
           onEdit,
         }),
@@ -916,6 +980,8 @@ window.__ModuleLoader__.load({
         warning: view.warning,
         intensity: view.data?.intensity,
         intensityPending,
+        policy: view.data?.policy,
+        runtime: view.data?.runtime,
         editor,
         editorBusy,
         editorError,
@@ -1003,7 +1069,11 @@ window.__ModuleLoader__.load({
       .pm-current-details { border-top:1px solid var(--dsw-alias-border-l1); padding-top:8px; }
       .pm-current-summary { color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; cursor:pointer; }
       .pm-current-summary:hover { color:var(--dsw-alias-label-primary); }
-      .pm-prompt { margin:8px 0 0; padding:10px 12px; border:1px solid var(--dsw-alias-border-l2); border-radius:8px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-secondary); font-family:var(--ds-font-family-code); font-size:12px; line-height:18px; white-space:pre-wrap; overflow-wrap:anywhere; }
+      .pm-preview { display:flex; flex-direction:column; gap:10px; margin-top:8px; }
+      .pm-preview-layer { display:flex; flex-direction:column; gap:4px; }
+      .pm-preview-label { color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
+      .pm-preview-total { color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; text-align:right; }
+      .pm-prompt { margin:0; padding:10px 12px; border:1px solid var(--dsw-alias-border-l2); border-radius:8px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-secondary); font-family:var(--ds-font-family-code); font-size:12px; line-height:18px; white-space:pre-wrap; overflow-wrap:anywhere; }
       .pm-loading { padding:24px 0; color:var(--dsw-alias-label-tertiary); font-size:13px; text-align:center; }
       .pm-error { display:flex; align-items:center; flex-wrap:wrap; gap:8px 10px; padding:10px 12px; border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 45%,transparent); border-radius:10px; background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 8%,transparent); }
       .pm-error-title { color:var(--dsw-alias-state-error-primary); font-size:12px; font-weight:600; }

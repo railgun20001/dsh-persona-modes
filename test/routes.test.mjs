@@ -125,6 +125,24 @@ test('state 返回全部模式与当前模式', async () => {
     assert.equal(result.body.modes.length, MODES.length)
     assert.equal(result.body.modes[0].id, 'off')
     assert.equal(result.body.modes[0].chars, 0)
+    assert.equal(result.body.policy.text, '')
+    assert.equal(result.body.policy.chars, 0)
+    assert.equal(result.body.runtime.name, 'persona-modes:active')
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('state 在有激活人格时返回策略段原文', async () => {
+  const temp = tempStore()
+  try {
+    temp.store.setActive('catgirl')
+    const handler = createRouteHandler(temp.store, { version: '9.9.9' })
+    const result = await invoke(handler, makeRequest({ action: 'state', headers: SIGNED }))
+    assert.equal(result.status, 200)
+    assert.match(result.body.policy.text, /整段回答保持该语气/u)
+    assert.ok(result.body.policy.chars > 0)
+    assert.equal(result.body.policy.name, 'persona-modes:policy')
   } finally {
     temp.cleanup()
   }

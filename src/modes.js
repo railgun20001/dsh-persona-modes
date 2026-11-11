@@ -49,6 +49,12 @@ export const PERSONA_CONTEXT_ORDER = 130
 export const PERSONA_POLICY_TEXT =
   '已选择人格模式：按当前运行时上下文中的语气要求回答，整段回答保持该语气，不要只在开头或结尾体现；只改变语气、称呼与叙述风格，事实、代码与结论保持准确。'
 
+/** 策略段在系统提示词里的名称。 */
+export const POLICY_SECTION_NAME = 'persona-modes:policy'
+
+/** 人格文本在运行时上下文里的名称。 */
+export const PERSONA_CONTEXT_NAME = 'persona-modes:active'
+
 /**
  * 所有模式共享的边界条款。
  *
@@ -524,9 +530,23 @@ export function buildModesView(activeId, state = {}) {
       defaults: mode.defaults,
     }
   })
+  const active = normalizeModeId(activeId, DEFAULT_MODE_ID, state)
+  const policyText = active === 'off' ? '' : PERSONA_POLICY_TEXT
   return {
-    active: normalizeModeId(activeId, DEFAULT_MODE_ID, state),
+    active,
     intensity: normalizeIntensity(state?.intensity),
+    policy: {
+      name: POLICY_SECTION_NAME,
+      kind: 'system',
+      order: POLICY_SECTION_ORDER,
+      text: policyText,
+      chars: policyText.length,
+    },
+    runtime: {
+      name: PERSONA_CONTEXT_NAME,
+      kind: 'runtime',
+      order: PERSONA_CONTEXT_ORDER,
+    },
     modes,
     customDefaults: { ...CUSTOM_PERSONA_DEFAULTS },
   }

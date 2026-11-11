@@ -195,6 +195,19 @@ test('resolveMode 叠加内置覆盖值，并带回默认值', () => {
   })
 })
 
+test('buildModesView 暴露策略段与运行时上下文元信息', () => {
+  const view = buildModesView('catgirl')
+  assert.equal(view.policy.name, 'persona-modes:policy')
+  assert.equal(view.policy.order, POLICY_SECTION_ORDER)
+  assert.equal(view.policy.text, PERSONA_POLICY_TEXT)
+  assert.equal(view.policy.chars, PERSONA_POLICY_TEXT.length)
+  assert.equal(view.runtime.name, 'persona-modes:active')
+  assert.equal(view.runtime.order, PERSONA_CONTEXT_ORDER)
+  const off = buildModesView('off')
+  assert.equal(off.policy.text, '')
+  assert.equal(off.policy.chars, 0)
+})
+
 test('buildModesView 包含自定义人格并给出可编辑字段', () => {
   const state = {
     overrides: {},

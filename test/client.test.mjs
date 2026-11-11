@@ -211,6 +211,12 @@ assert.ok(allText.includes('语气强度'))
 assert.ok(allText.includes('低'))
 assert.ok(allText.includes('中'))
 assert.ok(allText.includes('高'))
+assert.ok(allText.includes('系统提示段'))
+assert.ok(allText.includes('运行时上下文'))
+assert.ok(allText.includes('persona-modes:policy'))
+assert.ok(allText.includes('persona-modes:active'))
+assert.ok(allText.includes('整段回答保持该语气'))
+assert.ok(allText.includes('合计'))
 
 // 「查看当前提示词」必须放在当前人格容器内部，而不是页面底部的说明区。
 const current = elements.find((node) => node.props?.className === 'pm-current')

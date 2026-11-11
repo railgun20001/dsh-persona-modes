@@ -28,8 +28,10 @@ import {
   getMode,
   MODES,
   normalizeModeId,
+  PERSONA_CONTEXT_NAME,
   PERSONA_CONTEXT_ORDER,
   PERSONA_POLICY_TEXT,
+  POLICY_SECTION_NAME,
   POLICY_SECTION_ORDER,
   renderPersonaPrompt,
 } from './src/modes.js'
@@ -126,7 +128,7 @@ export function apply(ctx, config = {}) {
   ctx.inject(['systemPrompt'], (scoped) => {
     scoped.effect(
       () => scoped.systemPrompt.section({
-        name: 'persona-modes:policy',
+        name: POLICY_SECTION_NAME,
         order: POLICY_SECTION_ORDER,
         text: () => (store.getActive() === 'off' ? '' : PERSONA_POLICY_TEXT),
       }),
@@ -134,7 +136,7 @@ export function apply(ctx, config = {}) {
     )
     scoped.effect(
       () => scoped.systemPrompt.context({
-        name: 'persona-modes:active',
+        name: PERSONA_CONTEXT_NAME,
         order: PERSONA_CONTEXT_ORDER,
         required: true,
         interpolate: false,

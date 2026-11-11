@@ -137,6 +137,8 @@ export function buildStatePayload(store, version) {
     version,
     active: view.active,
     intensity: view.intensity,
+    policy: view.policy,
+    runtime: view.runtime,
     modes: view.modes,
     customDefaults: view.customDefaults,
   }

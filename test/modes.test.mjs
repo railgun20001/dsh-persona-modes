@@ -2,7 +2,7 @@
  * 模式目录与提示词预算测试。
  *
  * 最重要的断言是「每条实际注入文本都在预算内」——人格插件最容易失控的地方
- * 就是提示词膨胀；当前全部人格使用中文直译标签，实际注入约 75–142 字，预算
+ * 就是提示词膨胀；当前全部人格使用中文直译标签，实际注入约 75–130 字，预算
  * 上限 300 字，仍然远小于一份角色卡。
  */
 
@@ -113,13 +113,12 @@ test('语气强度档位追加不同标签，低档不追加', () => {
   const low = renderPersonaPrompt('catgirl', { intensity: 'low' })
   const medium = renderPersonaPrompt('catgirl', { intensity: 'medium' })
   const high = renderPersonaPrompt('catgirl', { intensity: 'high' })
-  assert.doesNotMatch(low, /强度：/u)
-  assert.match(medium, /强度：中/u)
-  assert.match(medium, /保持：整段角色语气/u)
-  assert.match(medium, /每段至少一次称呼或语气词/u)
-  assert.match(high, /强度：高/u)
-  assert.match(high, /保持：整段角色语气/u)
-  assert.match(high, /适度动作描写/u)
+  assert.doesNotMatch(low, /保持角色语气/u)
+  assert.match(medium, /保持角色语气，每段至少一次称呼或语气词。/u)
+  assert.match(high, /保持角色语气，每段至少一次称呼、语气词或情绪表达，可适度动作描写。/u)
+  assert.doesNotMatch(medium, /强度：/u)
+  assert.doesNotMatch(high, /强度：/u)
+  assert.doesNotMatch(high, /保持：/u)
   assert.doesNotMatch(high, /护栏：/u)
   assert.doesNotMatch(high, /不要只在开头或结尾体现/u)
   assert.match(high, /代码、命令、路径、引用保持原样/u)

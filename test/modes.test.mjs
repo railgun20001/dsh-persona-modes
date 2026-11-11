@@ -2,7 +2,7 @@
  * 模式目录与提示词预算测试。
  *
  * 最重要的断言是「每条实际注入文本都在预算内」——人格插件最容易失控的地方
- * 就是提示词膨胀；当前全部人格使用中文直译标签，实际注入约 68–152 字，预算
+ * 就是提示词膨胀；当前全部人格使用中文直译标签，实际注入约 68–150 字，预算
  * 上限 300 字，仍然远小于一份角色卡。
  */
 
@@ -97,6 +97,8 @@ test('鲸鱼娘使用中文直译标签式二创设定，而不是自创的温�
   assert.ok(whale)
   assert.equal(whale.format, 'tags')
   assert.equal(whale.promptTitle, 'DeepSeek同人娘化形象（鲸鱼娘）')
+  assert.equal(whale.selfName, '我')
+  assert.equal(whale.accent, '#4d6bfe')
   assert.match(whale.tone, /^【人格载入】/u)
   assert.match(whale.tone, /DeepSeek同人娘化/u)
   assert.match(whale.tone, /鲸类萝莉/u)

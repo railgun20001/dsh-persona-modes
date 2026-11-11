@@ -260,7 +260,7 @@ export const MODES = [
     accent: '#4d6bfe',
     format: 'tags',
     address: '主人',
-    selfName: '我',
+    selfName: '人家',
     tone: `【人格载入】
 DeepSeek同人娘化
 鲸类萝莉

@@ -61,7 +61,6 @@ window.__ModuleLoader__.load({
       preview: '查看当前提示词',
       previewPolicy: '系统提示段',
       previewRuntime: '运行时上下文',
-      previewOrder: '顺序 {order}',
       previewTotal: '合计 {count} 字',
       previewEmpty: '（不注入）',
       intensity: '语气强度',
@@ -118,7 +117,6 @@ window.__ModuleLoader__.load({
       preview: 'Show the active prompt',
       previewPolicy: 'System prompt section',
       previewRuntime: 'Runtime context',
-      previewOrder: 'order {order}',
       previewTotal: '{count} chars total',
       previewEmpty: '(nothing injected)',
       intensity: 'Persona intensity',
@@ -339,26 +337,14 @@ window.__ModuleLoader__.load({
      * @param {object} props 组件属性。
      * @returns {object} React 元素。
      */
-    function CurrentBar({ t, localeId, mode, policy, runtime, pending, onEdit }) {
+    function CurrentBar({ t, localeId, mode, policy, pending, onEdit }) {
       const isOff = mode.id === 'off'
       const prompt = typeof mode.prompt === 'string' ? mode.prompt : ''
       const chars = typeof mode.chars === 'number' ? mode.chars : 0
       const policyText = typeof policy?.text === 'string' ? policy.text : ''
       const policyChars = typeof policy?.chars === 'number' ? policy.chars : policyText.length
-      const policyName = typeof policy?.name === 'string' ? policy.name : 'persona-modes:policy'
-      const policyOrder = typeof policy?.order === 'number' ? policy.order : null
-      const runtimeName = typeof runtime?.name === 'string' ? runtime.name : 'persona-modes:active'
-      const runtimeOrder = typeof runtime?.order === 'number' ? runtime.order : null
       const total = chars + policyChars
-      const label = (title, name, order, count) =>
-        [
-          title,
-          `· ${name}`,
-          order === null ? '' : `· ${t('previewOrder', { order })}`,
-          `· ${t('chars', { count })}`,
-        ]
-          .filter((part) => part !== '')
-          .join(' ')
+      const label = (title, count) => `${title} · ${t('chars', { count })}`
       return h(
         'div',
         { className: 'pm-current' },
@@ -403,7 +389,7 @@ window.__ModuleLoader__.load({
                   h(
                     'div',
                     { className: 'pm-preview-label' },
-                    label(t('previewPolicy'), policyName, policyOrder, policyChars),
+                    label(t('previewPolicy'), policyChars),
                   ),
                   h('pre', { className: 'pm-prompt' }, policyText === '' ? t('previewEmpty') : policyText),
                 ),
@@ -413,7 +399,7 @@ window.__ModuleLoader__.load({
                   h(
                     'div',
                     { className: 'pm-preview-label' },
-                    label(t('previewRuntime'), runtimeName, runtimeOrder, chars),
+                    label(t('previewRuntime'), chars),
                   ),
                   h('pre', { className: 'pm-prompt' }, prompt === '' ? t('previewEmpty') : prompt),
                 ),
@@ -647,7 +633,6 @@ window.__ModuleLoader__.load({
         intensity,
         intensityPending,
         policy,
-        runtime,
         editor,
         editorBusy,
         editorError,
@@ -665,7 +650,6 @@ window.__ModuleLoader__.load({
       } = props
       const active = data.modes.find((mode) => mode.id === data.active) ?? data.modes[0]
       const policyData = policy ?? data.policy
-      const runtimeData = runtime ?? data.runtime
       return h(
         'div',
         { className: 'pm-root' },
@@ -675,7 +659,6 @@ window.__ModuleLoader__.load({
           localeId,
           mode: active,
           policy: policyData,
-          runtime: runtimeData,
           pending: pendingId !== null,
           onEdit,
         }),
@@ -981,7 +964,6 @@ window.__ModuleLoader__.load({
         intensity: view.data?.intensity,
         intensityPending,
         policy: view.data?.policy,
-        runtime: view.data?.runtime,
         editor,
         editorBusy,
         editorError,

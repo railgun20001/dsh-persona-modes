@@ -213,8 +213,6 @@ assert.ok(allText.includes('中'))
 assert.ok(allText.includes('高'))
 assert.ok(allText.includes('系统提示段'))
 assert.ok(allText.includes('运行时上下文'))
-assert.ok(allText.includes('persona-modes:policy'))
-assert.ok(allText.includes('persona-modes:active'))
 assert.ok(allText.includes('整段回答保持该语气'))
 assert.ok(allText.includes('合计'))
 

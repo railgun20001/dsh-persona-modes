@@ -63,10 +63,10 @@
 
 「查看当前提示词」按实际注入的通道分两层展示：
 
-1. **系统提示段**：`persona-modes:policy`，system 角色，order 10250；
-2. **运行时上下文**：`persona-modes:active`，user runtime snapshot，order 130。
+1. **系统提示段**：system 角色，稳定策略；
+2. **运行时上下文**：user runtime snapshot，当前人格正文 + 强度标签 + 边界。
 
-每层都显示 section 名称、顺序、实际字数和完整原文，底部给出两层合计字数。预览内容与 `renderPersonaPrompt()` / `PERSONA_POLICY_TEXT` 同源，策略段有变化也会直接显示，不做隐藏改动。
+每层只显示名称、实际字数和完整原文，底部给出两层合计字数；内部 `section` 名称和 `order` 不在界面暴露。预览内容与 `renderPersonaPrompt()` / `PERSONA_POLICY_TEXT` 同源，策略段有变化也会直接显示，不做隐藏改动。
 
 「鲸鱼娘」的标签源自 2026 年 8 月社区流传的 `PERSONA_LOAD` 触发词；本插件把它和其余模式统一改写为中文直译标签（`【人格载入】` + `鲸类萝莉` / `主食白饭` / `性格聪明但懒` 等）。DeepSeek 官方从未发布正式拟人形象，这里只作为同人语气层使用；部分二创也会把用户叫作「鱼片」。
 

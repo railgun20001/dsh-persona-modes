@@ -248,6 +248,7 @@ npm test
 ## 测试报告
 
 - [妈妈模式低/中/高强度测试（2026-11-11）](https://github.com/railgun20001/dsh-persona-modes/blob/master/docs/tests/2026-11-11-mom-intensity.md)：三档提示词、9 条完整回复原文、指标与结论。
+- [全部人格低/中/高强度测试（2026-11-11）](https://github.com/railgun20001/dsh-persona-modes/blob/master/docs/tests/2026-11-11-all-personas-intensity.md)：9 个内置人格 × 低/中/高 × 闲聊 + 高档代码，共 36 次。
 
 ## 发布与维护
 

@@ -2,7 +2,7 @@
  * 模式目录与提示词预算测试。
  *
  * 最重要的断言是「每条实际注入文本都在预算内」——人格插件最容易失控的地方
- * 就是提示词膨胀；当前全部人格使用中文直译标签，实际注入约 94–161 字，预算
+ * 就是提示词膨胀；当前全部人格使用中文直译标签，实际注入约 75–142 字，预算
  * 上限 300 字，仍然远小于一份角色卡。
  */
 
@@ -127,9 +127,9 @@ test('语气强度档位追加不同标签，低档不追加', () => {
   assert.ok(medium.length < high.length)
 })
 
-test('统一边界只保留安全与退出，不重复语气范围', () => {
+test('统一边界只保留安全约束，不重复语气范围与退出指令', () => {
   assert.match(PERSONA_BOUNDARY, /代码、命令、路径、引用保持原样/u)
-  assert.match(PERSONA_BOUNDARY, /正常说话/u)
+  assert.doesNotMatch(PERSONA_BOUNDARY, /正常说话/u)
   assert.doesNotMatch(PERSONA_BOUNDARY, /只改变语气/u)
   assert.doesNotMatch(PERSONA_BOUNDARY, /不主动提及/u)
 })

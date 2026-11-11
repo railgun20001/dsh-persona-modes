@@ -267,6 +267,10 @@ assert.ok(editorText.includes('自称'))
 assert.ok(editorText.includes('提示词'))
 assert.ok(editorText.includes('恢复默认'))
 assert.ok(editorText.includes('保存'))
+assert.ok(
+  !flatten(editorTree).some((node) => node.type === 'button' && textOf(node) === '删除'),
+  '编辑器里仍然保留删除按钮',
+)
 
 let editedId = null
 let createdCount = 0
@@ -299,6 +303,22 @@ const createButton = actionElements.find((node) => node.props?.className === 'pm
 assert.ok(createButton, '没有渲染新建自定义按钮')
 createButton.props.onClick()
 assert.equal(createdCount, 1)
+
+// 「新建自定义人格」必须落在当前人格条里，且排在「编辑」左侧，不再留在底部说明区。
+const actionCurrent = actionElements.find((node) => node.props?.className === 'pm-current')
+assert.ok(actionCurrent, '没有渲染当前人格容器')
+const sideClasses = flatten(actionCurrent)
+  .filter((node) => node.type === 'button')
+  .map((node) => node.props?.className)
+const createIndex = sideClasses.indexOf('pm-create')
+const editIndex = sideClasses.indexOf('pm-edit')
+assert.ok(createIndex >= 0, '新建自定义按钮不在当前人格容器里')
+assert.ok(editIndex >= 0, '编辑按钮不在当前人格容器里')
+assert.ok(createIndex < editIndex, '新建自定义按钮没有排在编辑按钮左侧')
+assert.ok(
+  !flatten(foot).some((node) => node.props?.className === 'pm-create'),
+  '底部说明区仍然渲染了新建按钮',
+)
 
 const mediumButton = actionElements.find(
   (node) => node.type === 'button' && node.props?.className === 'pm-segment' && textOf(node) === '中',
@@ -348,6 +368,93 @@ const card = elements.find(
 assert.ok(card, '没有渲染出选中卡片')
 card.props.onClick()
 assert.deepEqual(selected, ['catgirl'])
+
+// 自定义人格卡片：右上角悬浮 icon 删除按钮；内置卡片没有删除入口。
+const customMode = {
+  id: 'custom-demo',
+  nameZh: '自定义甲',
+  nameEn: 'Custom A',
+  summaryZh: '自定义人格',
+  summaryEn: 'Custom persona',
+  emoji: '🧩',
+  accent: '#0ea5e9',
+  chars: 42,
+  address: '你',
+  selfName: '我',
+  body: '【人格载入】',
+  defaults: { address: '你', selfName: '我', prompt: '【人格载入】' },
+  custom: true,
+}
+const dataWithCustom = { ...data, modes: [...data.modes, customMode] }
+let deletedMode = null
+const cardTree = PersonaView({
+  t,
+  localeId: 'zh',
+  data: dataWithCustom,
+  pendingId: null,
+  error: null,
+  onSelect: () => {},
+  onRetry: () => {},
+  onDelete: (mode) => {
+    deletedMode = mode
+  },
+})
+const cardElements = flatten(cardTree)
+const wraps = cardElements.filter((node) => node.props?.className === 'pm-card-wrap')
+assert.equal(wraps.length, dataWithCustom.modes.length, '卡片容器数量与模式数量不一致')
+
+const customWrap = wraps.find((node) => textOf(node).includes('自定义甲'))
+assert.ok(customWrap, '没有渲染自定义人格卡片')
+const customDelete = flatten(customWrap).find((node) => node.props?.className === 'pm-card-delete')
+assert.ok(customDelete, '自定义人格卡片没有悬浮删除按钮')
+assert.equal(textOf(customDelete), '', '悬浮删除按钮应当是纯 icon，没有文字')
+assert.equal(customDelete.props['aria-label'], '删除「自定义甲」')
+assert.equal(customDelete.props.disabled, false)
+customDelete.props.onClick()
+assert.equal(deletedMode?.id, 'custom-demo')
+
+const builtinWrap = wraps.find((node) => textOf(node).includes('猫娘'))
+assert.ok(builtinWrap, '没有渲染内置人格卡片')
+assert.ok(
+  !flatten(builtinWrap).some((node) => node.props?.className === 'pm-card-delete'),
+  '内置人格卡片也渲染了删除按钮',
+)
+
+// 删除失败时给出内联提示，而不是把整页打成错误态。
+const deleteFailTree = PersonaView({
+  t,
+  localeId: 'zh',
+  data: dataWithCustom,
+  pendingId: null,
+  error: null,
+  deleteError: '删除失败，请重试。',
+  onSelect: () => {},
+  onRetry: () => {},
+  onDelete: () => {},
+})
+const deleteFailError = flatten(deleteFailTree).find((node) => node.props?.className === 'pm-inline-error')
+assert.ok(deleteFailError, '删除失败时没有渲染内联错误')
+assert.equal(deleteFailError.props.role, 'alert')
+assert.equal(textOf(deleteFailError), '删除失败，请重试。')
+
+// 删除进行中：该卡片的删除按钮与卡片一起禁用，方便重复点击防护。
+const deletingTree = PersonaView({
+  t,
+  localeId: 'zh',
+  data: dataWithCustom,
+  pendingId: null,
+  error: null,
+  deletingId: 'custom-demo',
+  onSelect: () => {},
+  onRetry: () => {},
+  onDelete: () => {},
+})
+const deletingWrap = flatten(deletingTree)
+  .filter((node) => node.props?.className === 'pm-card-wrap')
+  .find((node) => textOf(node).includes('自定义甲'))
+const deletingButton = flatten(deletingWrap).find((node) => node.props?.className === 'pm-card-delete')
+assert.equal(deletingButton.props.disabled, true, '删除中的按钮没有禁用')
+assert.equal(deletingButton.props['data-busy'], 'true', '删除中的按钮没有标记 busy')
 
 // 错误态：宿主半缺失时给出明确提示
 const errorTree = PersonaView({

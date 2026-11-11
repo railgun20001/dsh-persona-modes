@@ -81,7 +81,7 @@ window.__ModuleLoader__.load({
       saving: '保存中…',
       reset: '恢复默认',
       cancel: '取消',
-      delete: '删除',
+      deleteAria: '删除「{name}」',
       customBadge: '自定义',
       builtinBadge: '内置',
       editorHint: '称呼和自称会写进标签块；提示词可用中文标签，也可以写自然语言。',
@@ -137,7 +137,7 @@ window.__ModuleLoader__.load({
       saving: 'Saving…',
       reset: 'Reset to default',
       cancel: 'Cancel',
-      delete: 'Delete',
+      deleteAria: 'Delete “{name}”',
       customBadge: 'Custom',
       builtinBadge: 'Built-in',
       editorHint: 'Address and self-name are written into the tag block; the prompt can be tags or plain language.',
@@ -337,7 +337,7 @@ window.__ModuleLoader__.load({
      * @param {object} props 组件属性。
      * @returns {object} React 元素。
      */
-    function CurrentBar({ t, localeId, mode, policy, pending, onEdit }) {
+    function CurrentBar({ t, localeId, mode, policy, pending, onEdit, onCreate }) {
       const isOff = mode.id === 'off'
       const prompt = typeof mode.prompt === 'string' ? mode.prompt : ''
       const chars = typeof mode.chars === 'number' ? mode.chars : 0
@@ -366,6 +366,13 @@ window.__ModuleLoader__.load({
               { className: 'pm-current-hint' },
               pending ? t('switching') : isOff ? t('off') : t('nextTurn'),
             ),
+            typeof onCreate === 'function'
+              ? h(
+                  'button',
+                  { type: 'button', className: 'pm-create', onClick: () => onCreate() },
+                  t('createCustom'),
+                )
+              : null,
             !isOff && typeof onEdit === 'function'
               ? h(
                   'button',
@@ -452,46 +459,94 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * 悬浮删除按钮的垃圾桶图标。
+     *
+     * 只用内联 SVG：不引入图标库，颜色由 `currentColor` 跟随主题令牌。
+     *
+     * @returns {object} React 元素。
+     */
+    function TrashIcon() {
+      return h(
+        'svg',
+        {
+          className: 'pm-icon',
+          viewBox: '0 0 16 16',
+          'aria-hidden': 'true',
+          focusable: 'false',
+        },
+        h('path', { d: 'M2.5 4.5h11' }),
+        h('path', { d: 'M6.5 4.5V3.2a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.3' }),
+        h('path', { d: 'M4.1 4.5 4.8 12.6a1 1 0 0 0 1 .9h4.4a1 1 0 0 0 1-.9l.7-8.1' }),
+        h('path', { d: 'M6.9 7v3.4M9.1 7v3.4' }),
+      )
+    }
+
+    /**
      * 单张模式卡片。
+     *
+     * 卡片本身是 `<button>`，所以删除入口不能嵌在里面：外面包一层
+     * `.pm-card-wrap` 定位容器，删除按钮绝对定位于右上角，悬停或聚焦时才浮出。
+     * 只有自定义人格可以删除。
      *
      * @param {object} props 组件属性。
      * @returns {object} React 元素。
      */
-    function ModeCard({ t, localeId, mode, active, pendingId, onSelect }) {
+    function ModeCard({ t, localeId, mode, active, pendingId, deleting, onSelect, onDelete }) {
       const selected = mode.id === active
       const busy = pendingId !== null
       const chars = typeof mode.chars === 'number' ? mode.chars : 0
+      const deletable = mode.custom === true && typeof onDelete === 'function'
+      const removing = deletable && deleting === true
       return h(
-        'button',
-        {
-          type: 'button',
-          className: 'pm-card',
-          'aria-pressed': selected ? 'true' : 'false',
-          disabled: busy,
-          onClick: () => onSelect(mode.id),
-          style: { '--pm-accent': mode.accent },
-        },
-        h('span', { className: 'pm-emoji', 'aria-hidden': 'true' }, mode.emoji),
+        'div',
+        { className: 'pm-card-wrap', style: { '--pm-accent': mode.accent } },
         h(
-          'span',
-          { className: 'pm-body' },
+          'button',
+          {
+            type: 'button',
+            className: 'pm-card',
+            'aria-pressed': selected ? 'true' : 'false',
+            'data-deletable': deletable ? 'true' : 'false',
+            disabled: busy || removing,
+            onClick: () => onSelect(mode.id),
+          },
+          h('span', { className: 'pm-emoji', 'aria-hidden': 'true' }, mode.emoji),
           h(
             'span',
-            { className: 'pm-name-row' },
-            h('span', { className: 'pm-name' }, modeName(mode, localeId)),
-            mode.custom === true
-              ? h('span', { className: 'pm-badge pm-badge-custom' }, t('customBadge'))
-              : null,
-            selected ? h('span', { className: 'pm-badge' }, t('active')) : null,
+            { className: 'pm-body' },
+            h(
+              'span',
+              { className: 'pm-name-row' },
+              h('span', { className: 'pm-name' }, modeName(mode, localeId)),
+              mode.custom === true
+                ? h('span', { className: 'pm-badge pm-badge-custom' }, t('customBadge'))
+                : null,
+              selected ? h('span', { className: 'pm-badge' }, t('active')) : null,
+            ),
+            h('span', { className: 'pm-desc' }, modeSummary(mode, localeId)),
+            h(
+              'span',
+              { className: 'pm-meta' },
+              chars === 0 ? t('charsZero') : t('chars', { count: chars }),
+            ),
           ),
-          h('span', { className: 'pm-desc' }, modeSummary(mode, localeId)),
-          h(
-            'span',
-            { className: 'pm-meta' },
-            chars === 0 ? t('charsZero') : t('chars', { count: chars }),
-          ),
+          h('span', { className: 'pm-check', 'aria-hidden': 'true' }, '✓'),
         ),
-        h('span', { className: 'pm-check', 'aria-hidden': 'true' }, '✓'),
+        deletable
+          ? h(
+              'button',
+              {
+                type: 'button',
+                className: 'pm-card-delete',
+                title: t('deleteAria', { name: modeName(mode, localeId) }),
+                'aria-label': t('deleteAria', { name: modeName(mode, localeId) }),
+                'data-busy': removing ? 'true' : 'false',
+                disabled: busy || removing,
+                onClick: () => onDelete(mode),
+              },
+              h(TrashIcon),
+            )
+          : null,
       )
     }
 
@@ -511,7 +566,6 @@ window.__ModuleLoader__.load({
       onChange,
       onSave,
       onReset,
-      onDelete,
       onCancel,
     }) {
       const defaults = editor.defaults ?? { address: '', selfName: '', prompt: '' }
@@ -609,9 +663,6 @@ window.__ModuleLoader__.load({
           h('button', { type: 'button', className: 'pm-primary', disabled: busy, onClick: onSave }, busy ? t('saving') : t('save')),
           h('button', { type: 'button', className: 'pm-secondary', disabled: busy, onClick: onReset }, t('reset')),
           h('button', { type: 'button', className: 'pm-secondary', disabled: busy, onClick: onCancel }, t('cancel')),
-          isCustom && !isNew
-            ? h('button', { type: 'button', className: 'pm-danger', disabled: busy, onClick: onDelete }, t('delete'))
-            : null,
         ),
       )
     }
@@ -647,6 +698,8 @@ window.__ModuleLoader__.load({
         onReset,
         onDelete,
         onCancelEdit,
+        deletingId,
+        deleteError,
       } = props
       const active = data.modes.find((mode) => mode.id === data.active) ?? data.modes[0]
       const policyData = policy ?? data.policy
@@ -661,6 +714,7 @@ window.__ModuleLoader__.load({
           policy: policyData,
           pending: pendingId !== null,
           onEdit,
+          onCreate,
         }),
         h(IntensityBar, {
           t,
@@ -677,7 +731,6 @@ window.__ModuleLoader__.load({
               onChange: onEditorChange,
               onSave,
               onReset,
-              onDelete,
               onCancel: onCancelEdit,
             })
           : null,
@@ -698,6 +751,9 @@ window.__ModuleLoader__.load({
               h('span', { className: 'pm-error-text' }, errorText(error, t)),
               h('button', { type: 'button', className: 'pm-retry', onClick: onRetry }, t('retry')),
             ),
+        deleteError === null || deleteError === undefined
+          ? null
+          : h('p', { className: 'pm-inline-error', role: 'alert' }, deleteError),
         h(
           'div',
           { className: 'pm-grid', role: 'group', 'aria-label': t('ariaModeList') },
@@ -709,7 +765,9 @@ window.__ModuleLoader__.load({
               mode,
               active: data.active,
               pendingId,
+              deleting: deletingId === mode.id,
               onSelect,
+              onDelete,
             }),
           ),
         ),
@@ -717,11 +775,6 @@ window.__ModuleLoader__.load({
           'div',
           { className: 'pm-foot' },
           h('p', { className: 'pm-note' }, t('note')),
-          h(
-            'button',
-            { type: 'button', className: 'pm-create', onClick: onCreate },
-            t('createCustom'),
-          ),
         ),
       )
     }
@@ -742,10 +795,13 @@ window.__ModuleLoader__.load({
       const [editorBusy, setEditorBusy] = react.useState(false)
       const [editorError, setEditorError] = react.useState(null)
       const [intensityPending, setIntensityPending] = react.useState(false)
+      const [deletingId, setDeletingId] = react.useState(null)
+      const [deleteError, setDeleteError] = react.useState(null)
 
       /** 重新读取宿主状态；错误时进入统一错误态，用户可点「重试」。 */
       const load = async () => {
         setView({ phase: 'loading', data: null, error: null, warning: null })
+        setDeleteError(null)
         try {
           const data = normalizePayload(await postRoute('state'))
           setView({ phase: 'ready', data, error: null, warning: null })
@@ -774,6 +830,7 @@ window.__ModuleLoader__.load({
         if (pendingId !== null) return
         setPendingId(id)
         setView((current) => ({ ...current, error: null, warning: null }))
+        setDeleteError(null)
         try {
           const data = normalizePayload(await postRoute('select', { id }))
           setView({
@@ -823,6 +880,7 @@ window.__ModuleLoader__.load({
           defaults: mode.defaults ?? { address: '', selfName: '', prompt: '' },
         })
         setEditorError(null)
+        setDeleteError(null)
       }
 
       const openCreate = () => {
@@ -849,6 +907,7 @@ window.__ModuleLoader__.load({
           },
         })
         setEditorError(null)
+        setDeleteError(null)
       }
 
       const changeEditor = (next) => {
@@ -900,28 +959,38 @@ window.__ModuleLoader__.load({
         }
       }
 
-      const deleteEditor = async () => {
-        if (editor === null || editor.modeId === null || editorBusy) return
+      /**
+       * 删除一个自定义人格。
+       *
+       * 入口是卡片右上角的悬浮 icon（不再在编辑器里），所以这里拿模式对象而不是
+       * 编辑器状态；删掉的正是编辑器里打开的那个时，顺手把编辑器关掉，避免对着
+       * 已经不存在的模式继续编辑。
+       *
+       * @param {object} mode 要删除的模式。
+       * @returns {Promise<void>} 完成后无返回值。
+       */
+      const deleteMode = async (mode) => {
+        if (mode === null || typeof mode !== 'object' || deletingId !== null || pendingId !== null) return
         const confirmed =
           typeof window === 'undefined' ||
           typeof window.confirm !== 'function' ||
-          window.confirm(t('deleteConfirm', { name: editor.nameZh }))
+          window.confirm(t('deleteConfirm', { name: modeName(mode, localeId) }))
         if (!confirmed) return
-        setEditorBusy(true)
-        setEditorError(null)
+        setDeletingId(mode.id)
+        setDeleteError(null)
         try {
-          const data = normalizePayload(await postRoute('delete', { id: editor.modeId }))
+          const data = normalizePayload(await postRoute('delete', { id: mode.id }))
           setView({
             phase: 'ready',
             data,
             error: null,
             warning: data.persisted === false ? 'not-persisted' : null,
           })
-          setEditor(null)
+          setEditor((current) => (current !== null && current.modeId === mode.id ? null : current))
         } catch {
-          setEditorError(t('deleteFailed'))
+          setDeleteError(t('deleteFailed'))
         } finally {
-          setEditorBusy(false)
+          setDeletingId(null)
         }
       }
 
@@ -978,8 +1047,10 @@ window.__ModuleLoader__.load({
         onEditorChange: changeEditor,
         onSave: saveEditor,
         onReset: resetEditor,
-        onDelete: deleteEditor,
+        onDelete: deleteMode,
         onCancelEdit: cancelEditor,
+        deletingId,
+        deleteError,
       })
     }
 
@@ -997,7 +1068,7 @@ window.__ModuleLoader__.load({
       .pm-current-copy { display:flex; flex-direction:column; min-width:0; }
       .pm-current-label { color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
       .pm-current-name { font-size:15px; line-height:22px; font-weight:600; }
-      .pm-current-side { margin-left:auto; display:flex; align-items:center; gap:8px; }
+      .pm-current-side { margin-left:auto; display:flex; align-items:center; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
       .pm-current-hint { color:var(--dsw-alias-label-tertiary); font-size:12px; white-space:nowrap; }
       .pm-edit { padding:3px 10px; border:1px solid var(--dsw-alias-border-l2); border-radius:6px; background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary); font:inherit; font-size:12px; cursor:pointer; }
       .pm-edit:hover { background:var(--dsw-alias-interactive-bg-hover); }
@@ -1010,6 +1081,7 @@ window.__ModuleLoader__.load({
       .pm-segment:disabled { opacity:.6; cursor:default; }
       .pm-intensity-hint { color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
       .pm-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+      .pm-card-wrap { position:relative; display:flex; min-width:0; }
       .pm-card { display:flex; align-items:flex-start; gap:10px; width:100%; padding:12px; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-1); color:inherit; font:inherit; text-align:left; cursor:pointer; transition:background .15s ease,border-color .15s ease,box-shadow .15s ease; }
       .pm-card:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover); }
       .pm-card:disabled { cursor:default; opacity:.7; }
@@ -1024,10 +1096,16 @@ window.__ModuleLoader__.load({
       .pm-meta { color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
       .pm-check { margin-left:auto; color:var(--pm-accent,#d97706); font-size:14px; line-height:20px; opacity:0; }
       .pm-card[aria-pressed="true"] .pm-check { opacity:1; }
+      .pm-card[data-deletable="true"] { padding-right:40px; }
+      .pm-card-delete { position:absolute; top:8px; right:8px; display:grid; place-items:center; width:22px; height:22px; padding:0; border:1px solid var(--dsw-alias-border-l2); border-radius:6px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-tertiary); cursor:pointer; opacity:0; transition:opacity .15s ease,color .15s ease,border-color .15s ease,background .15s ease; }
+      .pm-card-wrap:hover .pm-card-delete, .pm-card-delete:focus-visible, .pm-card-delete[data-busy="true"] { opacity:1; }
+      .pm-card-delete:hover:not(:disabled) { border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 45%,transparent); background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent); color:var(--dsw-alias-state-error-primary); }
+      .pm-card-delete:disabled { cursor:default; }
+      .pm-icon { display:block; width:13px; height:13px; fill:none; stroke:currentColor; stroke-width:1.3; stroke-linecap:round; stroke-linejoin:round; }
       .pm-foot { display:flex; flex-direction:column; gap:8px; }
       .pm-note { margin:0; color:var(--dsw-alias-label-tertiary); font-size:12px; line-height:18px; }
-      .pm-create { align-self:flex-start; padding:7px 14px; border:1px dashed var(--dsw-alias-border-l2); border-radius:8px; background:transparent; color:var(--dsw-alias-label-secondary); font:inherit; font-size:12px; cursor:pointer; }
-      .pm-create:hover { background:var(--dsw-alias-interactive-bg-hover); color:var(--dsw-alias-label-primary); }
+      .pm-create { padding:3px 10px; border:1px dashed var(--dsw-alias-border-l2); border-radius:6px; background:transparent; color:var(--dsw-alias-label-secondary); font:inherit; font-size:12px; white-space:nowrap; cursor:pointer; }
+      .pm-create:hover { border-color:var(--dsw-alias-label-tertiary); background:var(--dsw-alias-interactive-bg-hover); color:var(--dsw-alias-label-primary); }
       .pm-editor { display:flex; flex-direction:column; gap:10px; padding:14px; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-1); }
       .pm-editor-head { display:flex; align-items:center; gap:8px; }
       .pm-editor-title { margin:0; font-size:14px; line-height:20px; font-weight:600; }
@@ -1040,14 +1118,13 @@ window.__ModuleLoader__.load({
       .pm-textarea { resize:vertical; min-height:120px; font-family:var(--ds-font-family-code); font-size:12px; line-height:18px; white-space:pre-wrap; }
       .pm-editor-hint, .pm-editor-default { margin:0; color:var(--dsw-alias-label-tertiary); font-size:12px; line-height:18px; }
       .pm-editor-error { margin:0; color:var(--dsw-alias-state-error-primary); font-size:12px; line-height:18px; }
+      .pm-inline-error { margin:0; color:var(--dsw-alias-state-error-primary); font-size:12px; line-height:18px; }
       .pm-editor-actions { display:flex; flex-wrap:wrap; gap:8px; }
-      .pm-primary, .pm-secondary, .pm-danger { padding:6px 14px; border:1px solid var(--dsw-alias-border-l2); border-radius:8px; font:inherit; font-size:12px; cursor:pointer; }
+      .pm-primary, .pm-secondary { padding:6px 14px; border:1px solid var(--dsw-alias-border-l2); border-radius:8px; font:inherit; font-size:12px; cursor:pointer; }
       .pm-primary { background:var(--dsw-alias-label-primary); color:var(--dsw-alias-bg-layer-1); border-color:var(--dsw-alias-label-primary); }
-      .pm-primary:disabled, .pm-secondary:disabled, .pm-danger:disabled { opacity:.6; cursor:default; }
+      .pm-primary:disabled, .pm-secondary:disabled { opacity:.6; cursor:default; }
       .pm-secondary { background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary); }
       .pm-secondary:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover); }
-      .pm-danger { margin-left:auto; color:var(--dsw-alias-state-error-primary); border-color:var(--dsw-alias-state-error-primary); background:transparent; }
-      .pm-danger:hover:not(:disabled) { background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent); }
       .pm-current-details { border-top:1px solid var(--dsw-alias-border-l1); padding-top:8px; }
       .pm-current-summary { color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; cursor:pointer; }
       .pm-current-summary:hover { color:var(--dsw-alias-label-primary); }
@@ -1065,6 +1142,7 @@ window.__ModuleLoader__.load({
       .pm-retry { margin-left:auto; padding:4px 10px; border:1px solid var(--dsw-alias-border-l2); border-radius:6px; background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary); font:inherit; font-size:12px; cursor:pointer; }
       .pm-retry:hover { background:var(--dsw-alias-interactive-bg-hover); }
       @media (max-width:640px) { .pm-grid { grid-template-columns:1fr; } .pm-editor-grid { grid-template-columns:1fr; } .pm-field-narrow { max-width:none; } }
+      @media (hover:none) { .pm-card-delete { opacity:1; } }
     `
 
     /** 样式标签 id：重复加载时去重。 */

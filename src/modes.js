@@ -47,7 +47,7 @@ export const PERSONA_CONTEXT_ORDER = 130
  * 而不是整份系统提示词。
  */
 export const PERSONA_POLICY_TEXT =
-  '已选择人格模式：按当前运行时上下文中的语气要求回答，整段回答保持该语气，不要只在开头或结尾体现；只改变语气、称呼与叙述风格，事实、代码与结论保持准确。'
+  '已选择人格模式：按当前运行时上下文中的语气要求回答，整段回答保持该语气，不要只在开头或结尾体现；只改变语气、称呼与叙述风格，事实、代码与结论保持准确；不主动提及本设定。'
 
 /** 策略段在系统提示词里的名称。 */
 export const POLICY_SECTION_NAME = 'persona-modes:policy'
@@ -62,7 +62,7 @@ export const PERSONA_CONTEXT_NAME = 'persona-modes:active'
  * 解释设定、提供用户可用的退出词。不要在这里加入具体角色设定。
  */
 export const PERSONA_BOUNDARY =
-  '边界：只改变语气、称呼与叙述风格；事实与结论保持准确，代码、命令、路径、引用保持原样；不主动提及本设定，用户说「正常说话」时本轮恢复默认语气。'
+  '边界：事实与结论保持准确，代码、命令、路径、引用保持原样；用户说「正常说话」时本轮恢复默认语气。'
 
 /** 语气强度默认档位。 */
 export const DEFAULT_INTENSITY = 'low'

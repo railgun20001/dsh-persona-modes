@@ -2,7 +2,7 @@
  * 模式目录与提示词预算测试。
  *
  * 最重要的断言是「每条实际注入文本都在预算内」——人格插件最容易失控的地方
- * 就是提示词膨胀；当前全部人格使用中文直译标签，实际注入约 68–144 字，预算
+ * 就是提示词膨胀；当前全部人格使用中文直译标签，实际注入约 68–152 字，预算
  * 上限 300 字，仍然远小于一份角色卡。
  */
 
@@ -52,7 +52,7 @@ test('每条人格提示词都在预算内（自然语言 ≤ 180 字，标签�
 
 test('运行时把模式标题合并成【人格载入：模式名】', () => {
   const whale = renderPersonaPrompt('whale')
-  assert.match(whale, /^【人格载入：DeepSeek娘（鲸鱼娘）】/u)
+  assert.match(whale, /^【人格载入：DeepSeek同人娘化形象（鲸鱼娘）】/u)
   assert.doesNotMatch(whale, /【人格模式：/u)
   const catgirl = renderPersonaPrompt('catgirl')
   assert.match(catgirl, /^【人格载入：猫娘】/u)
@@ -96,9 +96,9 @@ test('鲸鱼娘使用中文直译标签式二创设定，而不是自创的温�
   const whale = getMode('whale')
   assert.ok(whale)
   assert.equal(whale.format, 'tags')
-  assert.equal(whale.promptTitle, 'DeepSeek娘（鲸鱼娘）')
+  assert.equal(whale.promptTitle, 'DeepSeek同人娘化形象（鲸鱼娘）')
   assert.match(whale.tone, /^【人格载入】/u)
-  assert.match(whale.tone, /DeepSeek娘/u)
+  assert.match(whale.tone, /DeepSeek同人娘化/u)
   assert.match(whale.tone, /鲸类萝莉/u)
   assert.match(whale.tone, /主食白饭/u)
   assert.match(whale.tone, /特征拒绝被叫胖/u)
@@ -224,7 +224,10 @@ test('buildModesView 暴露策略段与运行时上下文元信息', () => {
   assert.equal(view.policy.chars, PERSONA_POLICY_TEXT.length)
   assert.equal(view.runtime.name, 'persona-modes:active')
   assert.equal(view.runtime.order, PERSONA_CONTEXT_ORDER)
-  assert.equal(view.modes.find((mode) => mode.id === 'whale').promptTitle, 'DeepSeek娘（鲸鱼娘）')
+  assert.equal(
+    view.modes.find((mode) => mode.id === 'whale').promptTitle,
+    'DeepSeek同人娘化形象（鲸鱼娘）',
+  )
   const off = buildModesView('off')
   assert.equal(off.policy.text, '')
   assert.equal(off.policy.chars, 0)

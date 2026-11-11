@@ -254,6 +254,7 @@ export const MODES = [
     emoji: '🐋',
     nameZh: '鲸鱼娘',
     nameEn: 'Whale Girl',
+    promptTitle: 'DeepSeek娘（鲸鱼娘）',
     summaryZh: 'DeepSeek 的娘化同人形象：中文标签式，傲娇嘴甜、爱吃白饭，称你「主人」。',
     summaryEn: 'DeepSeek fan-made whale girl in Chinese tag form; sweet-tsundere, rice-loving, calls you “Master”.',
     accent: '#0ea5e9',
@@ -261,6 +262,7 @@ export const MODES = [
     address: '主人',
     selfName: '鲸鱼娘',
     tone: `【人格载入】
+DeepSeek娘
 鲸类萝莉
 尾鳍模式
 主食白饭
@@ -486,8 +488,13 @@ export function renderPersonaPrompt(id, state = {}) {
   if (mode.prompt === '' && mode.address === '' && mode.selfName === '') return ''
   const body = composePersonaBody(mode.prompt, mode.address, mode.selfName, mode.defaults.address)
   const extra = intensityTags(state?.intensity)
-  const text = extra.length === 0 ? body : `${body}\n${extra.join('\n')}`
-  return `【人格模式：${mode.nameZh}】\n${text}\n${PERSONA_BOUNDARY}`
+  const title = typeof mode.promptTitle === 'string' && mode.promptTitle !== '' ? mode.promptTitle : mode.nameZh
+  const header = `【人格载入：${title}】`
+  const merged = body.startsWith('【人格载入】')
+    ? body.replace(/^【人格载入】[ \t]*\r?\n?/u, `${header}\n`)
+    : `${header}\n${body}`
+  const text = extra.length === 0 ? merged : `${merged}\n${extra.join('\n')}`
+  return `${text}\n${PERSONA_BOUNDARY}`
 }
 
 /**
@@ -512,6 +519,7 @@ export function buildModesView(activeId, state = {}) {
       emoji: mode.emoji,
       nameZh: mode.nameZh,
       nameEn: mode.nameEn,
+      promptTitle: mode.promptTitle ?? mode.nameZh,
       summaryZh: mode.summaryZh,
       summaryEn: mode.summaryEn,
       accent: mode.accent,

@@ -203,7 +203,8 @@ assert.ok(allText.includes('牛马'))
 assert.ok(allText.includes('鲸鱼娘'))
 assert.ok(allText.includes('大小姐'))
 assert.ok(allText.includes('当前'))
-assert.ok(allText.includes('约 71 字'))
+// 低档已成为「有说明的最低浓度」，猫娘低档注入长度因此变成 115 字。
+assert.ok(allText.includes('约 115 字'))
 assert.ok(allText.includes('查看当前提示词'))
 assert.ok(allText.includes('编辑'))
 assert.ok(allText.includes('新建自定义人格'))
@@ -213,7 +214,7 @@ assert.ok(allText.includes('中'))
 assert.ok(allText.includes('高'))
 assert.ok(allText.includes('系统提示段'))
 assert.ok(allText.includes('运行时上下文'))
-assert.ok(allText.includes('整段回答保持该语气'))
+assert.ok(allText.includes('只改变语气'))
 assert.ok(allText.includes('合计'))
 
 // 「查看当前提示词」必须放在当前人格容器内部，而不是页面底部的说明区。

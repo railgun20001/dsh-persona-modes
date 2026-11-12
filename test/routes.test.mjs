@@ -140,7 +140,7 @@ test('state 在有激活人格时返回策略段原文', async () => {
     const handler = createRouteHandler(temp.store, { version: '9.9.9' })
     const result = await invoke(handler, makeRequest({ action: 'state', headers: SIGNED }))
     assert.equal(result.status, 200)
-    assert.match(result.body.policy.text, /整段回答保持该语气/u)
+    assert.match(result.body.policy.text, /只改变语气/u)
     assert.ok(result.body.policy.chars > 0)
     assert.equal(result.body.policy.name, 'persona-modes:policy')
   } finally {

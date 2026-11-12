@@ -2,8 +2,8 @@
  * 模式目录与提示词预算测试。
  *
  * 最重要的断言是「每条实际注入文本都在预算内」——人格插件最容易失控的地方
- * 就是提示词膨胀；当前全部人格使用中文直译标签，实际注入约 68–150 字，预算
- * 上限 300 字，仍然远小于一份角色卡。
+ * 就是提示词膨胀；当前全部人格使用中文直译标签，低/中/高档实际注入约
+ * 112–161 / 133–182 / 186–235 字，预算上限 300 字，仍然远小于一份角色卡。
  */
 
 import test from 'node:test'
@@ -121,18 +121,37 @@ test('除默认模式外，所有模式都使用中文直译标签', () => {
   }
 })
 
-test('语气强度档位追加不同标签，低档不追加', () => {
+test('语气强度档位用同一组标签描述程度，低档也给说明', () => {
   const low = renderPersonaPrompt('catgirl', { intensity: 'low' })
   const medium = renderPersonaPrompt('catgirl', { intensity: 'medium' })
   const high = renderPersonaPrompt('catgirl', { intensity: 'high' })
-  assert.doesNotMatch(low, /保持角色语气/u)
-  assert.match(medium, /保持角色语气，每段至少一次称呼或语气词。/u)
-  assert.match(high, /保持角色语气，每段至少一次称呼、语气词或情绪表达，可适度动作描写。/u)
-  assert.doesNotMatch(medium, /强度：/u)
-  assert.doesNotMatch(high, /强度：/u)
-  assert.doesNotMatch(high, /保持：/u)
-  assert.doesNotMatch(high, /护栏：/u)
-  assert.doesNotMatch(high, /不要只在开头或结尾体现/u)
+  // 三档都带档位名与同一组维度，只有程度词不同。
+  assert.match(low, /^语气强度：低$/mu)
+  assert.match(medium, /^语气强度：中$/mu)
+  assert.match(high, /^语气强度：高$/mu)
+  assert.match(low, /^语气词：适中$/mu)
+  assert.match(medium, /^语气词：经常$/mu)
+  assert.match(high, /^语气词：持续$/mu)
+  assert.match(low, /^情绪表达：偶尔$/mu)
+  assert.match(medium, /^情绪表达：适中$/mu)
+  assert.match(high, /^情绪表达：经常$/mu)
+  assert.match(low, /^动作描写：偶尔$/mu)
+  // 词库按档位逐层开放。
+  assert.match(low, /^可用层次：句尾助词、口头禅$/mu)
+  assert.match(medium, /语气拖长/u)
+  assert.doesNotMatch(low, /神态/u)
+  assert.match(medium, /神态/u)
+  assert.match(high, /内心独白/u)
+  // 小惊喜只出现在高档。
+  assert.match(high, /^小惊喜：偶尔$/mu)
+  assert.doesNotMatch(low, /小惊喜/u)
+  assert.doesNotMatch(medium, /小惊喜/u)
+  // 不再有「每段必须」的硬性行为约束，也不用比较词。
+  for (const text of [low, medium, high]) {
+    assert.doesNotMatch(text, /每段/u)
+    assert.doesNotMatch(text, /整段回答保持/u)
+    assert.doesNotMatch(text, /更角色|最角色/u)
+  }
   assert.match(high, /代码、命令、路径、引用保持原样/u)
   assert.ok(low.length < medium.length)
   assert.ok(medium.length < high.length)
@@ -145,10 +164,11 @@ test('统一边界只保留安全约束，不重复语气范围与退出指令',
   assert.doesNotMatch(PERSONA_BOUNDARY, /不主动提及/u)
 })
 
-test('人格策略段要求整段保持语气，并负责不主动提及设定', () => {
-  assert.match(PERSONA_POLICY_TEXT, /整段回答保持该语气/u)
-  assert.match(PERSONA_POLICY_TEXT, /不要只在开头或结尾体现/u)
+test('人格策略段只限定语气范围，不强制整段行为', () => {
+  assert.match(PERSONA_POLICY_TEXT, /只改变语气/u)
   assert.match(PERSONA_POLICY_TEXT, /不主动提及本设定/u)
+  assert.doesNotMatch(PERSONA_POLICY_TEXT, /整段回答保持该语气/u)
+  assert.doesNotMatch(PERSONA_POLICY_TEXT, /不要只在开头或结尾体现/u)
 })
 
 test('内置标签块不再写死称呼/自称，由配置统一追加', () => {

@@ -260,31 +260,22 @@ CI（`.github/workflows/ci.yml`）在 `ubuntu-latest` 与 `windows-latest` 上�
 「装了但设置页不出现」，比测试红更难排查。真实宿主里的开关验证不在 CI：它要在隔离 profile 里启动
 桌面宿主，托管 runner 没有交互式桌面会话，结论见下面的「验证记录」。
 
-发版（`.github/workflows/release.yml`）推 `v*` tag 触发：校验 tag 与 `package.json` 版本一致 →
-`npm test` → 已发布则跳过、未发布则 `npm publish --provenance` → 建 GitHub Release。
-认证走 npm 可信发布（Trusted Publishing / OIDC），仓库里不存任何 npm token。
-
-首次发布按这个顺序（可信发布要求包已存在，且配置创建后 **2 天内**要完成首次成功发布，所以先发再配）：
+发版在本机完成，不走 CI：npm 可信发布（Trusted Publishing / OIDC）在本仓库一直返回 404，
+CI 发布已于 2026-11-12 取消，`release.yml` 已移除。每次发版：
 
 ```powershell
 # 本机 npm 默认 registry 是镜像源，登录与发布都要显式指官方源
 npm login --registry=https://registry.npmjs.org/
+npm version patch --no-git-tag-version
+git commit -am "chore(release): 0.3.2"
+git tag v0.3.2
+git push origin master --tags
 npm test
 npm publish --registry=https://registry.npmjs.org/
+gh release create v0.3.2 --generate-notes --title v0.3.2
 ```
 
-然后在 npmjs.com 的包设置里补 Trusted publishing：GitHub Actions、`railgun20001`、
-`dsh-persona-modes`、工作流文件名 `release.yml`。之后每次发版只需改版本号、提交、推 tag：
-
-```powershell
-npm version patch --no-git-tag-version
-git commit -am "chore(release): 0.1.1"
-git tag v0.1.1
-git push origin master --tags
-```
-
-流程幂等：registry 上已存在的版本不会重发，只补一个 GitHub Release。版本号语义按 0.x 处理 ——
-`0.1.x` 修 bug，`0.2.0` 起加模式或改配置/状态文件形状（状态文件 v2 为
+版本号语义按 0.x 处理 —— `0.1.x` 修 bug，`0.2.0` 起加模式或改配置/状态文件形状（状态文件 v2 为
 `{ version, active, intensity, overrides, customModes, updatedAt }`，改形状要同时升 `version` 并写迁移）。
 
 ## 验证记录
@@ -295,6 +286,7 @@ git push origin master --tags
 - 2026-11-11：新增全局语气强度（低/中/高，默认低）；策略段增加「整段回答保持该语气」与「不主动提及本设定」；边界只保留安全约束，退出改为设置页 / `/persona off`；设置页「查看当前提示词」改为策略段 + 运行时上下文分层展示；模式标题合并为 `【人格载入：模式名】`，鲸鱼娘标题改为 `DeepSeek同人娘化形象（鲸鱼娘）` 并在首个 tag 加 `DeepSeek同人娘化`，主色改为 DeepSeek 品牌蓝 `#4D6BFE`、默认自称改为「我」；完成 27 次强度 A/B + 9 次代码任务细化测试 + 去重后 9 次闲聊抽测；离线测试 55 项全部通过。低/中/高档注入约 68–116 / 89–137 / 102–150 字。实测中档的中段覆盖率最高（约 0.60），高档约 0.50，低档为 0；代码任务 9/9 修复正确且代码块无人格词。
 - 2026-11-11：设置页交互调整——「新建自定义人格」从列表底部移到当前人格条内、排在「编辑」左侧；自定义人格的删除入口从编辑器改为卡片右上角的悬浮 icon 按钮（悬停或聚焦浮出、纯图标带 aria-label，删除中禁用），编辑器底部只保留保存 / 恢复默认 / 取消；删除失败改为内联提示，不再打断整页；离线测试 54 项全部通过。
 - 2026-11-12：行为类标签抽象化——妈妈 `提醒喝水休息吃饭` → `关心身心状态`，傲娇 `先做事` → `嘴上嫌弃手上不慢`；猫娘默认自称改为「喵喵」，鲸鱼娘默认自称改为「人家」。依据 5 轮长对话测试（技术定位 / 技术改写 / 日常短问 / 概念问答 / 情绪闲聊 × 中高档）：显式动作标签会在技术轮与概念轮也补一句健康提醒（中档 5 次、高档 6 次），改为状态描述后技术/概念轮降到 0，情绪轮仍自然关怀。离线测试 55 项全部通过；`renderPersonaPrompt` 字数为猫娘 71、妈妈 83、鲸鱼娘 117。
+- 2026-11-12：取消 CI 发布——`release.yml` 的 OIDC 可信发布在 v0.3.0 与 v0.3.1 均报 `404 PUT registry.npmjs.org`，故移除该工作流，改为本地 `npm publish --registry=https://registry.npmjs.org/` + `gh release create`。v0.3.1 已用本地 token 发布成功并创建 GitHub Release；CI 仍保留 `ci.yml` 跑测试与打包校验。
 
 ## 设置页不出现时
 

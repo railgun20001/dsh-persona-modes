@@ -258,6 +258,7 @@ npm test
 
 - [妈妈模式低/中/高强度测试（2026-11-11）](https://github.com/railgun20001/dsh-persona-modes/blob/master/docs/tests/2026-11-11-mom-intensity.md)：三档提示词、9 条完整回复原文、指标与结论。
 - [全部人格低/中/高强度测试（2026-11-11）](https://github.com/railgun20001/dsh-persona-modes/blob/master/docs/tests/2026-11-11-all-personas-intensity.md)：9 个内置人格 × 低/中/高 × 闲聊 + 高档代码，共 36 次。
+- [语气强度 v2（标签式）实测（2026-11-12）](https://github.com/railgun20001/dsh-persona-modes/blob/master/docs/tests/2026-11-12-intensity-v2.md)：猫娘 / 傲娇 / 鲸鱼娘 / 女儿 × 低中高 × 同一个稍微复杂任务，每格 3 次共 36 次；结论是「动作描写」是唯一稳定单调的刻度，高档不会拖长技术答案，`小惊喜` 的可操作性偏弱。
 
 ## 发布与维护
 

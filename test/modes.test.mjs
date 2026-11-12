@@ -3,7 +3,7 @@
  *
  * 最重要的断言是「每条实际注入文本都在预算内」——人格插件最容易失控的地方
  * 就是提示词膨胀；当前全部人格使用中文直译标签，低/中/高档实际注入约
- * 112–161 / 133–182 / 186–235 字，预算上限 300 字，仍然远小于一份角色卡。
+ * 111–160 / 132–181 / 185–234 字，预算上限 300 字，仍然远小于一份角色卡。
  */
 
 import test from 'node:test'
@@ -129,18 +129,25 @@ test('语气强度档位用同一组标签描述程度，低档也给说明', ()
   assert.match(low, /^语气强度：低$/mu)
   assert.match(medium, /^语气强度：中$/mu)
   assert.match(high, /^语气强度：高$/mu)
-  assert.match(low, /^语气词：适中$/mu)
-  assert.match(medium, /^语气词：经常$/mu)
-  assert.match(high, /^语气词：持续$/mu)
+  // 动作描写与神态是主刻度，紧跟档位名。
+  assert.match(low, /^动作描写：偶尔$/mu)
+  assert.match(medium, /^动作描写：适中$/mu)
+  assert.match(high, /^动作描写：经常$/mu)
+  assert.match(low, /^神态：偶尔$/mu)
+  assert.match(medium, /^神态：适中$/mu)
+  assert.match(high, /^神态：经常$/mu)
   assert.match(low, /^情绪表达：偶尔$/mu)
   assert.match(medium, /^情绪表达：适中$/mu)
   assert.match(high, /^情绪表达：经常$/mu)
-  assert.match(low, /^动作描写：偶尔$/mu)
+  // 语气词维度已被删除（称呼与句尾助词由人格本体标签覆盖）。
+  for (const text of [low, medium, high]) {
+    assert.doesNotMatch(text, /^语气词：/mu)
+  }
   // 词库按档位逐层开放。
   assert.match(low, /^可用层次：句尾助词、口头禅$/mu)
   assert.match(medium, /语气拖长/u)
-  assert.doesNotMatch(low, /神态/u)
-  assert.match(medium, /神态/u)
+  assert.doesNotMatch(low, /神态、/u)
+  assert.match(medium, /神态、/u)
   assert.match(high, /内心独白/u)
   // 小惊喜只出现在高档。
   assert.match(high, /^小惊喜：偶尔$/mu)

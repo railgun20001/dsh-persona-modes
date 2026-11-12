@@ -203,8 +203,8 @@ assert.ok(allText.includes('牛马'))
 assert.ok(allText.includes('鲸鱼娘'))
 assert.ok(allText.includes('大小姐'))
 assert.ok(allText.includes('当前'))
-// 低档已成为「有说明的最低浓度」，猫娘低档注入长度因此变成 115 字。
-assert.ok(allText.includes('约 115 字'))
+// 低档已成为「有说明的最低浓度」，猫娘低档注入长度因此变成 114 字。
+assert.ok(allText.includes('约 114 字'))
 assert.ok(allText.includes('查看当前提示词'))
 assert.ok(allText.includes('编辑'))
 assert.ok(allText.includes('新建自定义人格'))

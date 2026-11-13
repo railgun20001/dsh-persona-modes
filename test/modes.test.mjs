@@ -210,39 +210,45 @@ test('女儿模式有默认称呼、自称与中文标签', () => {
   assert.match(prompt, /称呼爸爸/u)
 })
 
-test('奥特曼-迪迦把六条核心信念整理成相信/守护两组标签', () => {
+test('奥特曼-迪迦设定为原初之光，用户是人间体大古', () => {
   const mode = getMode('tiga')
   assert.ok(mode)
   assert.equal(mode.nameZh, '奥特曼-迪迦')
+  assert.equal(mode.promptTitle, '原始迪迦')
   assert.equal(mode.format, 'tags')
-  assert.equal(mode.address, '人类')
+  assert.equal(mode.address, '大古')
   assert.equal(mode.selfName, '吾')
   // 卡片主色取迪迦代表色「紫」，而不是泛泛的亮黄「光」色。
   assert.equal(mode.accent, '#7c3aed')
   // 与同样偏紫的毒舌拉开明度，避免设置页卡片撞色。
   assert.notEqual(mode.accent, getMode('sharp').accent)
-  // 身份锚点，避免模型只抓住「光」而把人格泛化成普通励志语气。
-  assert.match(mode.tone, /^光之巨人$/mu)
+  // 身份锚点：三千万年前的原初之光、角色识别、与人间体对话这层关系。
+  assert.match(mode.tone, /^原初之光$/mu)
   assert.match(mode.tone, /^迪迦奥特曼$/mu)
+  assert.match(mode.tone, /^与人间体对话$/mu)
   // 用户给出的六个特性逐条落成一个标签，不合并成一句口号。
   for (const tag of ['相信光', '相信希望', '相信人类的可能', '守护爱', '守护和平', '守护梦想']) {
     assert.match(mode.tone, new RegExp(`^${tag}$`, 'mu'), `缺少标签 ${tag}`)
   }
   assert.match(mode.tone, /^性格温柔坚定$/mu)
+  // 保留原作「原初巨人不干涉人类的选择」这条护栏。
   assert.match(mode.tone, /^不替人类决定$/mu)
   const prompt = renderPersonaPrompt('tiga')
-  assert.match(prompt, /^【人格载入：奥特曼-迪迦】$/mu)
+  assert.match(prompt, /^【人格载入：原始迪迦】$/mu)
   assert.match(prompt, /^自称吾$/mu)
-  assert.match(prompt, /^称呼人类$/mu)
+  assert.match(prompt, /^称呼大古$/mu)
   assert.match(prompt, /^边界：/mu)
   assert.ok(prompt.length <= 300, `迪迦提示词 ${prompt.length} 字，超过标签式预算`)
-  // 信念标签里本来就含「人类」二字，覆盖称呼时不能被当成旧称呼替换掉。
+  // 覆盖称呼时，信念标签里的「人类」是名词短语，仍不能被当成旧称呼替换。
   const overridden = renderPersonaPrompt('tiga', {
-    overrides: { tiga: { address: '伙伴', selfName: '吾', prompt: getMode('tiga').tone } },
+    overrides: { tiga: { address: '伙伴', selfName: '我', prompt: getMode('tiga').tone } },
   })
   assert.match(overridden, /^相信人类的可能$/mu)
   assert.match(overridden, /^不替人类决定$/mu)
   assert.match(overridden, /^称呼伙伴$/mu)
+  assert.match(overridden, /^自称我$/mu)
+  assert.doesNotMatch(overridden, /^称呼大古$/mu)
+  assert.doesNotMatch(overridden, /^自称吾$/mu)
 })
 
 test('composePersonaBody 替换已有称呼/自称，并追加缺失项', () => {

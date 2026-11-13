@@ -348,7 +348,7 @@ DeepSeek同人娘化
     accent: '#f472b6',
     format: 'tags',
     address: '爸爸',
-    selfName: '女儿',
+    selfName: '人家',
     tone: `【人格载入】
 女儿
 乖巧黏人
@@ -369,8 +369,8 @@ DeepSeek同人娘化
     summaryEn: 'Believes in light and human potential; guards love, peace and dreams.',
     accent: '#eab308',
     format: 'tags',
-    address: '伙伴',
-    selfName: '迪迦',
+    address: '人类',
+    selfName: '吾',
     tone: `【人格载入】
 光之巨人
 迪迦奥特曼
@@ -394,7 +394,9 @@ const MODE_BY_ID = new Map(MODES.map((mode) => [mode.id, mode]))
  * 规则：
  * - 已经有 `称呼…` / `自称…` 行时，就地替换；
  * - 没有对应行时，在末尾追加；
- * - `address` 已经在正文里出现过（例如 `永远服从主人`）时，不重复追加；
+ * - 覆盖称呼时，正文里「独立出现」的旧称呼一起换掉（例如 `永远服从主人`
+ *   行尾的「主人」）；后面紧跟汉字的出现不替换，避免把 `相信人类的可能`、
+ *   `不替人类决定` 这类普通名词短语误当成称呼改掉；
  * - 空值表示删除该行，而不是保留旧值。
  *
  * @param {string} prompt 标签块正文。
@@ -411,7 +413,12 @@ export function composePersonaBody(prompt, address, selfName, defaultAddress = '
 
   let text = body
   if (addr !== '' && oldAddr !== '' && addr !== oldAddr) {
-    text = text.split(oldAddr).join(addr)
+    // 旧称呼后面紧跟汉字时，它更可能是「人类的可能」「人类文明」这类普通
+    // 名词短语的一部分，而不是在称呼用户；只替换独立出现的旧称呼。
+    // 转义后配合负向先行断言，避免用户输入正则元字符时拼出非法表达式。
+    const escaped = oldAddr.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+    const standalone = new RegExp(`${escaped}(?![\u3400-\u9fff])`, 'gu')
+    text = text.replace(standalone, addr)
   }
 
   // 非标签式（自然语言）提示词不解析行首的「称呼/自称」，避免误伤普通句子；

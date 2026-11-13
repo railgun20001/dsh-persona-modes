@@ -203,10 +203,10 @@ test('女儿模式有默认称呼、自称与中文标签', () => {
   const mode = getMode('daughter')
   assert.ok(mode)
   assert.equal(mode.address, '爸爸')
-  assert.equal(mode.selfName, '女儿')
+  assert.equal(mode.selfName, '人家')
   const prompt = renderPersonaPrompt('daughter')
   assert.match(prompt, /乖巧黏人/u)
-  assert.match(prompt, /自称女儿/u)
+  assert.match(prompt, /自称人家/u)
   assert.match(prompt, /称呼爸爸/u)
 })
 
@@ -215,8 +215,8 @@ test('奥特曼-迪迦把六条核心信念整理成相信/守护两组标签', 
   assert.ok(mode)
   assert.equal(mode.nameZh, '奥特曼-迪迦')
   assert.equal(mode.format, 'tags')
-  assert.equal(mode.address, '伙伴')
-  assert.equal(mode.selfName, '迪迦')
+  assert.equal(mode.address, '人类')
+  assert.equal(mode.selfName, '吾')
   // 身份锚点，避免模型只抓住「光」而把人格泛化成普通励志语气。
   assert.match(mode.tone, /^光之巨人$/mu)
   assert.match(mode.tone, /^迪迦奥特曼$/mu)
@@ -228,10 +228,17 @@ test('奥特曼-迪迦把六条核心信念整理成相信/守护两组标签', 
   assert.match(mode.tone, /^不替人类决定$/mu)
   const prompt = renderPersonaPrompt('tiga')
   assert.match(prompt, /^【人格载入：奥特曼-迪迦】$/mu)
-  assert.match(prompt, /^自称迪迦$/mu)
-  assert.match(prompt, /^称呼伙伴$/mu)
+  assert.match(prompt, /^自称吾$/mu)
+  assert.match(prompt, /^称呼人类$/mu)
   assert.match(prompt, /^边界：/mu)
   assert.ok(prompt.length <= 300, `迪迦提示词 ${prompt.length} 字，超过标签式预算`)
+  // 信念标签里本来就含「人类」二字，覆盖称呼时不能被当成旧称呼替换掉。
+  const overridden = renderPersonaPrompt('tiga', {
+    overrides: { tiga: { address: '伙伴', selfName: '吾', prompt: getMode('tiga').tone } },
+  })
+  assert.match(overridden, /^相信人类的可能$/mu)
+  assert.match(overridden, /^不替人类决定$/mu)
+  assert.match(overridden, /^称呼伙伴$/mu)
 })
 
 test('composePersonaBody 替换已有称呼/自称，并追加缺失项', () => {
@@ -249,6 +256,19 @@ test('composePersonaBody 替换已有称呼/自称，并追加缺失项', () => 
   assert.equal(
     composePersonaBody('你是一个温柔的助手。', '老板', '小助手'),
     '你是一个温柔的助手。\n自称小助手\n称呼老板',
+  )
+})
+
+test('覆盖称呼只替换独立出现的旧称呼，不误伤名词短语', () => {
+  const body = '【人格载入】\n相信人类的可能\n不替人类决定\n永远服从人类'
+  assert.equal(
+    composePersonaBody(body, '伙伴', '吾', '人类'),
+    '【人格载入】\n相信人类的可能\n不替人类决定\n永远服从伙伴\n自称吾\n称呼伙伴',
+  )
+  // 旧称呼出现在行尾时仍然要一起换掉，保持既有行为。
+  assert.equal(
+    composePersonaBody('【人格载入】\n永远服从主人', '铲屎官', '本喵', '主人'),
+    '【人格载入】\n永远服从铲屎官\n自称本喵\n称呼铲屎官',
   )
 })
 

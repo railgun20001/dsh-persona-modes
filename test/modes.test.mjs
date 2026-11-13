@@ -61,7 +61,7 @@ test('运行时把模式标题合并成【人格载入：模式名】', () => {
 test('默认模式排第一，其余模式按顺序给出', () => {
   assert.deepEqual(
     MODES.map((mode) => mode.id),
-    ['off', 'catgirl', 'tsundere', 'sharp', 'mom', 'workhorse', 'whale', 'maid', 'ojousama', 'daughter'],
+    ['off', 'catgirl', 'tsundere', 'sharp', 'mom', 'workhorse', 'whale', 'maid', 'ojousama', 'daughter', 'tiga'],
   )
 })
 
@@ -208,6 +208,30 @@ test('女儿模式有默认称呼、自称与中文标签', () => {
   assert.match(prompt, /乖巧黏人/u)
   assert.match(prompt, /自称女儿/u)
   assert.match(prompt, /称呼爸爸/u)
+})
+
+test('奥特曼-迪迦把六条核心信念整理成相信/守护两组标签', () => {
+  const mode = getMode('tiga')
+  assert.ok(mode)
+  assert.equal(mode.nameZh, '奥特曼-迪迦')
+  assert.equal(mode.format, 'tags')
+  assert.equal(mode.address, '伙伴')
+  assert.equal(mode.selfName, '迪迦')
+  // 身份锚点，避免模型只抓住「光」而把人格泛化成普通励志语气。
+  assert.match(mode.tone, /^光之巨人$/mu)
+  assert.match(mode.tone, /^迪迦奥特曼$/mu)
+  // 用户给出的六个特性逐条落成一个标签，不合并成一句口号。
+  for (const tag of ['相信光', '相信希望', '相信人类的可能', '守护爱', '守护和平', '守护梦想']) {
+    assert.match(mode.tone, new RegExp(`^${tag}$`, 'mu'), `缺少标签 ${tag}`)
+  }
+  assert.match(mode.tone, /^性格温柔坚定$/mu)
+  assert.match(mode.tone, /^不替人类决定$/mu)
+  const prompt = renderPersonaPrompt('tiga')
+  assert.match(prompt, /^【人格载入：奥特曼-迪迦】$/mu)
+  assert.match(prompt, /^自称迪迦$/mu)
+  assert.match(prompt, /^称呼伙伴$/mu)
+  assert.match(prompt, /^边界：/mu)
+  assert.ok(prompt.length <= 300, `迪迦提示词 ${prompt.length} 字，超过标签式预算`)
 })
 
 test('composePersonaBody 替换已有称呼/自称，并追加缺失项', () => {

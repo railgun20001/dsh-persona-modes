@@ -95,6 +95,7 @@ test('commandHelp 列出当前模式与全部 id', () => {
   assert.ok(text.includes('当前人格：鲸鱼娘（whale）'))
   assert.ok(text.includes('catgirl（猫娘）'))
   assert.ok(text.includes('daughter（女儿）'))
+  assert.ok(text.includes('tiga（奥特曼-迪迦）'))
   assert.ok(text.includes('off（默认）'))
 })
 

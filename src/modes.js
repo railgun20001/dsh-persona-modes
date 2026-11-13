@@ -367,7 +367,9 @@ DeepSeek同人娘化
     nameEn: 'Ultraman Tiga',
     summaryZh: '相信光与人类的可能，守护爱、和平与梦想。',
     summaryEn: 'Believes in light and human potential; guards love, peace and dreams.',
-    accent: '#eab308',
+    // 迪迦代表色取紫：复合型为红紫银三色、天空型以蓝紫为主，紫色也是官方
+    // 水晶之力的呈现色；#7c3aed 比毒舌的亮紫 #8b5cf6 更深，避免卡片撞色。
+    accent: '#7c3aed',
     format: 'tags',
     address: '人类',
     selfName: '吾',

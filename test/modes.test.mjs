@@ -217,6 +217,10 @@ test('奥特曼-迪迦把六条核心信念整理成相信/守护两组标签', 
   assert.equal(mode.format, 'tags')
   assert.equal(mode.address, '人类')
   assert.equal(mode.selfName, '吾')
+  // 卡片主色取迪迦代表色「紫」，而不是泛泛的亮黄「光」色。
+  assert.equal(mode.accent, '#7c3aed')
+  // 与同样偏紫的毒舌拉开明度，避免设置页卡片撞色。
+  assert.notEqual(mode.accent, getMode('sharp').accent)
   // 身份锚点，避免模型只抓住「光」而把人格泛化成普通励志语气。
   assert.match(mode.tone, /^光之巨人$/mu)
   assert.match(mode.tone, /^迪迦奥特曼$/mu)

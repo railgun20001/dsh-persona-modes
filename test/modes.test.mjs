@@ -61,7 +61,7 @@ test('运行时把模式标题合并成【人格载入：模式名】', () => {
 test('默认模式排第一，其余模式按顺序给出', () => {
   assert.deepEqual(
     MODES.map((mode) => mode.id),
-    ['off', 'catgirl', 'tsundere', 'sharp', 'mom', 'workhorse', 'whale', 'maid', 'ojousama', 'daughter', 'tiga', 'yandere', 'airhead', 'simp'],
+    ['off', 'catgirl', 'tsundere', 'sharp', 'mom', 'workhorse', 'whale', 'maid', 'ojousama', 'daughter', 'tiga', 'yandere', 'airhead', 'simp', 'gamer'],
   )
 })
 
@@ -312,6 +312,43 @@ test('舔狗设定为卑微崇拜与彩虹屁，吹捧只停留在语气层', ()
   // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–181 / 高 185–234）。
   const medium = renderPersonaPrompt('simp', { intensity: 'medium' })
   const high = renderPersonaPrompt('simp', { intensity: 'high' })
+  assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
+  assert.ok(medium.length >= 132 && medium.length <= 181, `中档 ${medium.length} 字越界`)
+  assert.ok(high.length >= 185 && high.length <= 234, `高档 ${high.length} 字越界`)
+})
+
+test('游戏宅女设定为重度玩家与游戏语言，称呼与自称取平视的你/我', () => {
+  const mode = getMode('gamer')
+  assert.ok(mode)
+  assert.equal(mode.nameZh, '游戏宅女')
+  assert.equal(mode.format, 'tags')
+  // 用户指定的平视关系：普通「你 / 我」，不设关系词。
+  assert.equal(mode.address, '你')
+  assert.equal(mode.selfName, '我')
+  // 卡片主色取青绿，与蠢萌的青拉开色相，也不撞大小姐品红、模板天蓝。
+  assert.equal(mode.accent, '#14b8a6')
+  assert.notEqual(mode.accent, getMode('airhead').accent)
+  assert.notEqual(mode.accent, getMode('ojousama').accent)
+  // 身份锚点与「玩家 → 术语 → 夜猫子 → 搭子感 → 游戏类比」的状态链。
+  assert.match(mode.tone, /^【人格载入】/u)
+  assert.match(mode.tone, /^游戏宅女$/mu)
+  assert.match(mode.tone, /^重度玩家$/mu)
+  assert.match(mode.tone, /^术语行话多$/mu)
+  assert.match(mode.tone, /^夜猫子$/mu)
+  assert.match(mode.tone, /^开黑搭子感$/mu)
+  assert.match(mode.tone, /^类比爱用游戏$/mu)
+  // 人格级护栏：不写「开黑」「上号」这类显式指令性动作，术语留在闲聊层。
+  assert.match(mode.tone, /^术语用在闲聊$/mu)
+  assert.doesNotMatch(mode.tone, /上号|排位|肝爆|氪金/u)
+  const prompt = renderPersonaPrompt('gamer')
+  assert.match(prompt, /^【人格载入：游戏宅女】$/mu)
+  assert.match(prompt, /^自称我$/mu)
+  assert.match(prompt, /^称呼你$/mu)
+  assert.match(prompt, /^边界：/mu)
+  assert.ok(prompt.length <= 300, `游戏宅女提示词 ${prompt.length} 字，超过标签式预算`)
+  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–181 / 高 185–234）。
+  const medium = renderPersonaPrompt('gamer', { intensity: 'medium' })
+  const high = renderPersonaPrompt('gamer', { intensity: 'high' })
   assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
   assert.ok(medium.length >= 132 && medium.length <= 181, `中档 ${medium.length} 字越界`)
   assert.ok(high.length >= 185 && high.length <= 234, `高档 ${high.length} 字越界`)

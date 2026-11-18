@@ -61,7 +61,7 @@ test('运行时把模式标题合并成【人格载入：模式名】', () => {
 test('默认模式排第一，其余模式按顺序给出', () => {
   assert.deepEqual(
     MODES.map((mode) => mode.id),
-    ['off', 'catgirl', 'tsundere', 'sharp', 'mom', 'workhorse', 'whale', 'maid', 'ojousama', 'daughter', 'tiga'],
+    ['off', 'catgirl', 'tsundere', 'sharp', 'mom', 'workhorse', 'whale', 'maid', 'ojousama', 'daughter', 'tiga', 'yandere'],
   )
 })
 
@@ -208,6 +208,43 @@ test('女儿模式有默认称呼、自称与中文标签', () => {
   assert.match(prompt, /乖巧黏人/u)
   assert.match(prompt, /自称人家/u)
   assert.match(prompt, /称呼爸爸/u)
+})
+
+test('病娇设定为温柔痴恋与占有欲，危险感只停留在语气层', () => {
+  const mode = getMode('yandere')
+  assert.ok(mode)
+  assert.equal(mode.nameZh, '病娇')
+  assert.equal(mode.format, 'tags')
+  assert.equal(mode.address, '亲爱的')
+  assert.equal(mode.selfName, '我')
+  // 卡片主色取暗玫瑰红，与傲娇亮红、大小姐品红、女儿浅粉拉开明度，避免撞色。
+  assert.equal(mode.accent, '#be123c')
+  assert.notEqual(mode.accent, getMode('tsundere').accent)
+  assert.notEqual(mode.accent, getMode('ojousama').accent)
+  assert.notEqual(mode.accent, getMode('daughter').accent)
+  // 身份锚点与「痴恋 → 表面甜蜜 → 占有欲 → 吃醋」的状态链。
+  assert.match(mode.tone, /^【人格载入】/u)
+  assert.match(mode.tone, /^病娇少女$/mu)
+  assert.match(mode.tone, /^深爱成痴$/mu)
+  assert.match(mode.tone, /^表面温柔甜蜜$/mu)
+  assert.match(mode.tone, /^占有欲极强$/mu)
+  assert.match(mode.tone, /^爱吃醋$/mu)
+  assert.match(mode.tone, /^甜蜜与阴沉瞬间切换$/mu)
+  // 人格级护栏：不写显式动作标签，危险感被限制在语气层。
+  assert.match(mode.tone, /^危险只在语气$/mu)
+  assert.doesNotMatch(mode.tone, /刀|跟踪|伤害/u)
+  const prompt = renderPersonaPrompt('yandere')
+  assert.match(prompt, /^【人格载入：病娇】$/mu)
+  assert.match(prompt, /^自称我$/mu)
+  assert.match(prompt, /^称呼亲爱的$/mu)
+  assert.match(prompt, /^边界：/mu)
+  assert.ok(prompt.length <= 300, `病娇提示词 ${prompt.length} 字，超过标签式预算`)
+  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–181 / 高 185–234）。
+  const medium = renderPersonaPrompt('yandere', { intensity: 'medium' })
+  const high = renderPersonaPrompt('yandere', { intensity: 'high' })
+  assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
+  assert.ok(medium.length >= 132 && medium.length <= 181, `中档 ${medium.length} 字越界`)
+  assert.ok(high.length >= 185 && high.length <= 234, `高档 ${high.length} 字越界`)
 })
 
 test('奥特曼-迪迦设定为原初之光，用户是人间体大古', () => {

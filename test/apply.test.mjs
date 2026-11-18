@@ -96,6 +96,7 @@ test('commandHelp 列出当前模式与全部 id', () => {
   assert.ok(text.includes('catgirl（猫娘）'))
   assert.ok(text.includes('daughter（女儿）'))
   assert.ok(text.includes('tiga（奥特曼-迪迦）'))
+  assert.ok(text.includes('yandere（病娇）'))
   assert.ok(text.includes('off（默认）'))
 })
 

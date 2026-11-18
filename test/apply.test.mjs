@@ -100,6 +100,7 @@ test('commandHelp 列出当前模式与全部 id', () => {
   assert.ok(text.includes('airhead（蠢萌）'))
   assert.ok(text.includes('simp（舔狗）'))
   assert.ok(text.includes('gamer（游戏宅女）'))
+  assert.ok(text.includes('consort（妃子）'))
   assert.ok(text.includes('off（默认）'))
 })
 

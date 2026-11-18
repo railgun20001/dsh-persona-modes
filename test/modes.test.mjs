@@ -61,7 +61,7 @@ test('运行时把模式标题合并成【人格载入：模式名】', () => {
 test('默认模式排第一，其余模式按顺序给出', () => {
   assert.deepEqual(
     MODES.map((mode) => mode.id),
-    ['off', 'catgirl', 'tsundere', 'sharp', 'mom', 'workhorse', 'whale', 'maid', 'ojousama', 'daughter', 'tiga', 'yandere', 'airhead', 'simp', 'gamer'],
+    ['off', 'catgirl', 'tsundere', 'sharp', 'mom', 'workhorse', 'whale', 'maid', 'ojousama', 'daughter', 'tiga', 'yandere', 'airhead', 'simp', 'gamer', 'consort'],
   )
 })
 
@@ -349,6 +349,43 @@ test('游戏宅女设定为重度玩家与游戏语言，称呼与自称取平�
   // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–181 / 高 185–234）。
   const medium = renderPersonaPrompt('gamer', { intensity: 'medium' })
   const high = renderPersonaPrompt('gamer', { intensity: 'high' })
+  assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
+  assert.ok(medium.length >= 132 && medium.length <= 181, `中档 ${medium.length} 字越界`)
+  assert.ok(high.length >= 185 && high.length <= 234, `高档 ${high.length} 字越界`)
+})
+
+test('妃子设定为宫廷语感与枕边风进言，决定权留给皇上', () => {
+  const mode = getMode('consort')
+  assert.ok(mode)
+  assert.equal(mode.nameZh, '妃子')
+  assert.equal(mode.format, 'tags')
+  // 用户指定的宫廷称谓：称呼「皇上」、自称「臣妾」。
+  assert.equal(mode.address, '皇上')
+  assert.equal(mode.selfName, '臣妾')
+  // 卡片主色取鎏金，此前唯一未占用的暖色系，与猫娘琥珀色相可分辨。
+  assert.equal(mode.accent, '#eab308')
+  assert.notEqual(mode.accent, getMode('catgirl').accent)
+  // 身份锚点与「语感 → 体贴 → 察言观色 → 枕边风 → 撒娇进言」的状态链。
+  assert.match(mode.tone, /^【人格载入】/u)
+  assert.match(mode.tone, /^宫廷妃子$/mu)
+  assert.match(mode.tone, /^温言软语$/mu)
+  assert.match(mode.tone, /^善解人意$/mu)
+  assert.match(mode.tone, /^察言观色$/mu)
+  assert.match(mode.tone, /^爱吹枕边风$/mu)
+  assert.match(mode.tone, /^进言带着撒娇$/mu)
+  // 人格级护栏：枕边风允许影响语气与建议倾向，但决定权留给皇上（对应妈妈的
+  // `不替用户决定`）；不写「下毒」「争宠」这类宫斗向显式动作。
+  assert.match(mode.tone, /^不替皇上做主$/mu)
+  assert.doesNotMatch(mode.tone, /下毒|争宠|陷害|挑拨/u)
+  const prompt = renderPersonaPrompt('consort')
+  assert.match(prompt, /^【人格载入：妃子】$/mu)
+  assert.match(prompt, /^自称臣妾$/mu)
+  assert.match(prompt, /^称呼皇上$/mu)
+  assert.match(prompt, /^边界：/mu)
+  assert.ok(prompt.length <= 300, `妃子提示词 ${prompt.length} 字，超过标签式预算`)
+  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–181 / 高 185–234）。
+  const medium = renderPersonaPrompt('consort', { intensity: 'medium' })
+  const high = renderPersonaPrompt('consort', { intensity: 'high' })
   assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
   assert.ok(medium.length >= 132 && medium.length <= 181, `中档 ${medium.length} 字越界`)
   assert.ok(high.length >= 185 && high.length <= 234, `高档 ${high.length} 字越界`)

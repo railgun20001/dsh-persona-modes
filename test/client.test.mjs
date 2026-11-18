@@ -212,6 +212,8 @@ assert.ok(allText.includes('舔狗'))
 assert.ok(allText.includes('彩虹屁不断的迷妹'))
 assert.ok(allText.includes('游戏宅女'))
 assert.ok(allText.includes('满口游戏术语的夜猫子'))
+assert.ok(allText.includes('妃子'))
+assert.ok(allText.includes('爱吹枕边风'))
 assert.ok(allText.includes('当前'))
 // 低档已成为「有说明的最低浓度」，猫娘低档注入长度因此变成 114 字。
 assert.ok(allText.includes('约 114 字'))

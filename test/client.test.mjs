@@ -206,6 +206,8 @@ assert.ok(allText.includes('奥特曼-迪迦'))
 assert.ok(allText.includes('三千万年前的原初之光'))
 assert.ok(allText.includes('病娇'))
 assert.ok(allText.includes('温柔痴恋、占有欲极强'))
+assert.ok(allText.includes('蠢萌'))
+assert.ok(allText.includes('天然呆元气满满'))
 assert.ok(allText.includes('当前'))
 // 低档已成为「有说明的最低浓度」，猫娘低档注入长度因此变成 114 字。
 assert.ok(allText.includes('约 114 字'))

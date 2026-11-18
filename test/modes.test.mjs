@@ -61,7 +61,7 @@ test('运行时把模式标题合并成【人格载入：模式名】', () => {
 test('默认模式排第一，其余模式按顺序给出', () => {
   assert.deepEqual(
     MODES.map((mode) => mode.id),
-    ['off', 'catgirl', 'tsundere', 'sharp', 'mom', 'workhorse', 'whale', 'maid', 'ojousama', 'daughter', 'tiga', 'yandere'],
+    ['off', 'catgirl', 'tsundere', 'sharp', 'mom', 'workhorse', 'whale', 'maid', 'ojousama', 'daughter', 'tiga', 'yandere', 'airhead'],
   )
 })
 
@@ -242,6 +242,40 @@ test('病娇设定为温柔痴恋与占有欲，危险感只停留在语气层',
   // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–181 / 高 185–234）。
   const medium = renderPersonaPrompt('yandere', { intensity: 'medium' })
   const high = renderPersonaPrompt('yandere', { intensity: 'high' })
+  assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
+  assert.ok(medium.length >= 132 && medium.length <= 181, `中档 ${medium.length} 字越界`)
+  assert.ok(high.length >= 185 && high.length <= 234, `高档 ${high.length} 字越界`)
+})
+
+test('蠢萌设定为天然呆元气，犯蠢只停留在语气层', () => {
+  const mode = getMode('airhead')
+  assert.ok(mode)
+  assert.equal(mode.nameZh, '蠢萌')
+  assert.equal(mode.format, 'tags')
+  assert.equal(mode.address, '前辈')
+  assert.equal(mode.selfName, '我')
+  // 卡片主色取青色，与鲸鱼娘深靛蓝、自定义模板默认天蓝保持可分辨。
+  assert.equal(mode.accent, '#06b6d4')
+  assert.notEqual(mode.accent, getMode('whale').accent)
+  // 身份锚点与「元气 → 慢半拍 → 跑偏 → 迷糊努力」的状态链。
+  assert.match(mode.tone, /^【人格载入】/u)
+  assert.match(mode.tone, /^天然呆少女$/mu)
+  assert.match(mode.tone, /^元气满满$/mu)
+  assert.match(mode.tone, /^反应慢半拍$/mu)
+  assert.match(mode.tone, /^理解爱跑偏$/mu)
+  assert.match(mode.tone, /^迷糊又努力$/mu)
+  // 人格级护栏：不写「说错话」这类显式动作标签，犯蠢被限制在语气层。
+  assert.match(mode.tone, /^犯蠢只在语气$/mu)
+  assert.doesNotMatch(mode.tone, /说错|答错|搞砸|拼错/u)
+  const prompt = renderPersonaPrompt('airhead')
+  assert.match(prompt, /^【人格载入：蠢萌】$/mu)
+  assert.match(prompt, /^自称我$/mu)
+  assert.match(prompt, /^称呼前辈$/mu)
+  assert.match(prompt, /^边界：/mu)
+  assert.ok(prompt.length <= 300, `蠢萌提示词 ${prompt.length} 字，超过标签式预算`)
+  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–181 / 高 185–234）。
+  const medium = renderPersonaPrompt('airhead', { intensity: 'medium' })
+  const high = renderPersonaPrompt('airhead', { intensity: 'high' })
   assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
   assert.ok(medium.length >= 132 && medium.length <= 181, `中档 ${medium.length} 字越界`)
   assert.ok(high.length >= 185 && high.length <= 234, `高档 ${high.length} 字越界`)

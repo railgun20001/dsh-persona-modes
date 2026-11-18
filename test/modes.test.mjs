@@ -61,7 +61,7 @@ test('运行时把模式标题合并成【人格载入：模式名】', () => {
 test('默认模式排第一，其余模式按顺序给出', () => {
   assert.deepEqual(
     MODES.map((mode) => mode.id),
-    ['off', 'catgirl', 'tsundere', 'sharp', 'mom', 'workhorse', 'whale', 'maid', 'ojousama', 'daughter', 'tiga', 'yandere', 'airhead'],
+    ['off', 'catgirl', 'tsundere', 'sharp', 'mom', 'workhorse', 'whale', 'maid', 'ojousama', 'daughter', 'tiga', 'yandere', 'airhead', 'simp'],
   )
 })
 
@@ -276,6 +276,42 @@ test('蠢萌设定为天然呆元气，犯蠢只停留在语气层', () => {
   // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–181 / 高 185–234）。
   const medium = renderPersonaPrompt('airhead', { intensity: 'medium' })
   const high = renderPersonaPrompt('airhead', { intensity: 'high' })
+  assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
+  assert.ok(medium.length >= 132 && medium.length <= 181, `中档 ${medium.length} 字越界`)
+  assert.ok(high.length >= 185 && high.length <= 234, `高档 ${high.length} 字越界`)
+})
+
+test('舔狗设定为卑微崇拜与彩虹屁，吹捧只停留在语气层', () => {
+  const mode = getMode('simp')
+  assert.ok(mode)
+  assert.equal(mode.nameZh, '舔狗')
+  assert.equal(mode.format, 'tags')
+  assert.equal(mode.address, '哥哥')
+  assert.equal(mode.selfName, '迷妹')
+  // 卡片主色取暖橙，与猫娘琥珀拉开色温，也不与红粉紫青撞色。
+  assert.equal(mode.accent, '#f97316')
+  assert.notEqual(mode.accent, getMode('catgirl').accent)
+  // 身份锚点与「崇拜 → 彩虹屁 → 有求必应 → 感动」的状态链。
+  assert.match(mode.tone, /^【人格载入】/u)
+  assert.match(mode.tone, /^舔狗少女$/mu)
+  assert.match(mode.tone, /^卑微崇拜$/mu)
+  assert.match(mode.tone, /^彩虹屁不断$/mu)
+  assert.match(mode.tone, /^有求必应$/mu)
+  assert.match(mode.tone, /^感动于微小回应$/mu)
+  assert.match(mode.tone, /^自嘲式幽默$/mu)
+  assert.match(mode.tone, /^卑微且真诚$/mu)
+  // 人格级护栏：不写「送礼」「秒回」这类显式动作标签，吹捧被限制在语气层。
+  assert.match(mode.tone, /^吹捧只在语气$/mu)
+  assert.doesNotMatch(mode.tone, /送礼|秒回|转账|发红包/u)
+  const prompt = renderPersonaPrompt('simp')
+  assert.match(prompt, /^【人格载入：舔狗】$/mu)
+  assert.match(prompt, /^自称迷妹$/mu)
+  assert.match(prompt, /^称呼哥哥$/mu)
+  assert.match(prompt, /^边界：/mu)
+  assert.ok(prompt.length <= 300, `舔狗提示词 ${prompt.length} 字，超过标签式预算`)
+  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–181 / 高 185–234）。
+  const medium = renderPersonaPrompt('simp', { intensity: 'medium' })
+  const high = renderPersonaPrompt('simp', { intensity: 'high' })
   assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
   assert.ok(medium.length >= 132 && medium.length <= 181, `中档 ${medium.length} 字越界`)
   assert.ok(high.length >= 185 && high.length <= 234, `高档 ${high.length} 字越界`)

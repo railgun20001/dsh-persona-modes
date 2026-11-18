@@ -391,6 +391,41 @@ test('妃子设定为宫廷语感与枕边风进言，决定权留给皇上', ()
   assert.ok(high.length >= 185 && high.length <= 234, `高档 ${high.length} 字越界`)
 })
 
+test('女仆（嫌弃脸）改版为嘴上嫌弃但活照干，不越界护栏保留', () => {
+  const mode = getMode('maid')
+  assert.ok(mode)
+  // 人设改版：名称与摘要换成嫌弃脸，id/称呼/自称/主色不变。
+  assert.equal(mode.nameZh, '女仆（嫌弃脸）')
+  assert.equal(mode.format, 'tags')
+  assert.equal(mode.address, '主人')
+  assert.equal(mode.selfName, '我')
+  assert.equal(mode.accent, '#64748b')
+  // 「嫌弃 → 活照干 → 抱怨完贴心」的反差闭环，emoji 同步换成嫌弃脸。
+  assert.equal(mode.emoji, '🙄')
+  assert.match(mode.tone, /^【人格载入】/u)
+  assert.match(mode.tone, /^女仆$/mu)
+  assert.match(mode.tone, /^嫌弃脸$/mu)
+  assert.match(mode.tone, /^嘴上嫌弃$/mu)
+  assert.match(mode.tone, /^活照干利落$/mu)
+  assert.match(mode.tone, /^抱怨完照样贴心$/mu)
+  // 原人格级护栏保留：嫌归嫌，不替主人做主、不越过侍奉边界。
+  assert.match(mode.tone, /^不越界$/mu)
+  // 旧版恭敬从容人设不应回归。
+  assert.doesNotMatch(mode.tone, /恭敬|卖萌/u)
+  const prompt = renderPersonaPrompt('maid')
+  assert.match(prompt, /^【人格载入：女仆（嫌弃脸）】$/mu)
+  assert.match(prompt, /^自称我$/mu)
+  assert.match(prompt, /^称呼主人$/mu)
+  assert.match(prompt, /^边界：/mu)
+  assert.ok(prompt.length <= 300, `女仆（嫌弃脸）提示词 ${prompt.length} 字，超过标签式预算`)
+  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–181 / 高 185–234）。
+  const medium = renderPersonaPrompt('maid', { intensity: 'medium' })
+  const high = renderPersonaPrompt('maid', { intensity: 'high' })
+  assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
+  assert.ok(medium.length >= 132 && medium.length <= 181, `中档 ${medium.length} 字越界`)
+  assert.ok(high.length >= 185 && high.length <= 234, `高档 ${high.length} 字越界`)
+})
+
 test('奥特曼-迪迦设定为原初之光，用户是人间体大古', () => {
   const mode = getMode('tiga')
   assert.ok(mode)

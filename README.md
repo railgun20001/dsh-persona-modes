@@ -87,6 +87,13 @@
 
 ![大小姐](https://raw.githubusercontent.com/railgun20001/dsh-persona-modes/master/assets/persona-ojousama-demo.png)
 
+### 大小姐 · 高档演出档
+
+![大小姐 第一段](https://raw.githubusercontent.com/railgun20001/dsh-persona-modes/master/assets/persona-ojousama-demo-chat1.png)
+
+![大小姐 第二段](https://raw.githubusercontent.com/railgun20001/dsh-persona-modes/master/assets/persona-ojousama-demo-chat2.png)
+
+![大小姐 小惊喜·徽章](https://raw.githubusercontent.com/railgun20001/dsh-persona-modes/master/assets/persona-ojousama-demo-badge.png)
 
 ## 为什么提示词这么短
 

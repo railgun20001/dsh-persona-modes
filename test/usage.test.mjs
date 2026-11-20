@@ -1,0 +1,277 @@
+/**
+ * 匿名计数客户端测试。
+ *
+ * 全部使用注入的假 fetch 与假时钟：不访问 Abacus，也不创建任何真实计数键。
+ */
+
+import test from 'node:test'
+import assert from 'node:assert/strict'
+
+import {
+  createUsage,
+  isCountableId,
+  USAGE_BASE_URL,
+  USAGE_BREAKER_MS,
+  USAGE_CACHE_MS,
+  USAGE_MAX_BODY,
+  USAGE_NAMESPACE,
+} from '../src/usage.js'
+
+/**
+ * 造一个 JSON 响应。
+ *
+ * @param {unknown} body 响应体。
+ * @param {number} [status] 状态码。
+ * @returns {object} Response 形状的桩。
+ */
+function jsonResponse(body, status = 200) {
+  const text = JSON.stringify(body)
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    headers: {
+      get(name) {
+        return name === 'content-length' ? String(Buffer.byteLength(text)) : null
+      },
+    },
+    text: async () => text,
+  }
+}
+
+/**
+ * 记录请求并给出固定响应的假 fetch。
+ *
+ * @param {(url: string) => object} responder 响应生成器。
+ * @returns {{ calls: Array<{ url: string, init: object }>, fetch: Function }} 调用记录与 fetch。
+ */
+function fakeFetch(responder) {
+  const calls = []
+  return {
+    calls,
+    async fetch(url, init) {
+      calls.push({ url, init })
+      return responder(url)
+    },
+  }
+}
+
+/**
+ * 造一个可拨动的时钟。
+ *
+ * @param {number} [start] 初始毫秒。
+ * @returns {{ now: () => number, advance: (ms: number) => void }} 时钟。
+ */
+function clock(start = 1_000) {
+  let value = start
+  return {
+    now: () => value,
+    advance(ms) {
+      value += ms
+    },
+  }
+}
+
+test('isCountableId 只接受内置人格 id', () => {
+  assert.equal(isCountableId('catgirl'), true)
+  assert.equal(isCountableId('off'), false)
+  assert.equal(isCountableId('custom-abc'), false)
+  assert.equal(isCountableId('Catgirl'), false)
+  assert.equal(isCountableId('../etc'), false)
+  assert.equal(isCountableId(''), false)
+  assert.equal(isCountableId(null), false)
+})
+
+test('record 只发人格 id，且带超时、禁重定向、无凭据', async () => {
+  const time = clock()
+  const fake = fakeFetch(() => jsonResponse({ value: 7 }))
+  const usage = createUsage({ fetch: fake.fetch, now: time.now, enabled: true })
+
+  assert.equal(await usage.record('catgirl'), true)
+  assert.equal(fake.calls.length, 1)
+  const [call] = fake.calls
+  assert.equal(call.url, `${USAGE_BASE_URL}/hit/${USAGE_NAMESPACE}/catgirl`)
+  assert.equal(call.init.method, 'GET')
+  assert.equal(call.init.redirect, 'error')
+  assert.equal(call.init.credentials, 'omit')
+  assert.equal(call.init.cache, 'no-store')
+  assert.ok(call.init.signal !== undefined)
+  assert.equal(call.init.headers['user-agent'], 'dsh-persona-modes')
+})
+
+test('record 对非法 id 不发请求', async () => {
+  const fake = fakeFetch(() => jsonResponse({ value: 1 }))
+  const usage = createUsage({ fetch: fake.fetch, enabled: true })
+
+  assert.equal(await usage.record('off'), false)
+  assert.equal(await usage.record('custom-x'), false)
+  assert.equal(await usage.record('not valid'), false)
+  assert.equal(fake.calls.length, 0)
+})
+
+test('record 失败只返回 false，不抛错', async () => {
+  const usage = createUsage({
+    fetch: async () => {
+      throw new Error('network down')
+    },
+    enabled: true,
+  })
+  assert.equal(await usage.record('catgirl'), false)
+})
+
+test('非法计数被当作失败', async () => {
+  const fake = fakeFetch(() => jsonResponse({ value: -3 }))
+  const usage = createUsage({ fetch: fake.fetch, enabled: true })
+  assert.equal(await usage.record('catgirl'), false)
+})
+
+test('本地令牌桶限制突发请求', async () => {
+  const time = clock()
+  const fake = fakeFetch(() => jsonResponse({ value: 1 }))
+  const usage = createUsage({ fetch: fake.fetch, now: time.now, enabled: true })
+
+  for (let index = 0; index < 25; index += 1) {
+    await usage.record('catgirl')
+  }
+  assert.equal(fake.calls.length, 20)
+})
+
+test('连续失败后熔断，时间过去后恢复', async () => {
+  const time = clock()
+  let fail = true
+  const fake = fakeFetch(() => (fail ? jsonResponse({ error: 'boom' }, 500) : jsonResponse({ value: 1 })))
+  const usage = createUsage({ fetch: fake.fetch, now: time.now, enabled: true })
+
+  for (let index = 0; index < 3; index += 1) {
+    await usage.record('catgirl')
+  }
+  assert.equal(fake.calls.length, 3)
+  assert.equal(await usage.record('catgirl'), false)
+  assert.equal(fake.calls.length, 3, '熔断期间不应再发请求')
+
+  fail = false
+  time.advance(USAGE_BREAKER_MS + 1)
+  assert.equal(await usage.record('catgirl'), true)
+  assert.equal(fake.calls.length, 4)
+})
+
+test('enabled=false 时 record/read 完全不出网', async () => {
+  const fake = fakeFetch(() => jsonResponse({ value: 1 }))
+  const usage = createUsage({ fetch: fake.fetch, enabled: false })
+  assert.equal(await usage.record('catgirl'), false)
+  assert.equal(await usage.read(['catgirl']), null)
+  assert.equal(fake.calls.length, 0)
+})
+
+test('read 汇总计数并缓存一小时', async () => {
+  const time = clock()
+  const fake = fakeFetch((url) => {
+    if (url.endsWith('/catgirl')) return jsonResponse({ value: 12 })
+    return jsonResponse({ value: 34 })
+  })
+  const usage = createUsage({ fetch: fake.fetch, now: time.now, enabled: true })
+
+  const first = await usage.read(['catgirl', 'mom'])
+  assert.deepEqual(first.counts, { catgirl: 12, mom: 34 })
+  assert.equal(first.partial, false)
+  assert.equal(fake.calls.length, 2)
+
+  const second = await usage.read(['catgirl', 'mom'])
+  assert.deepEqual(second.counts, { catgirl: 12, mom: 34 })
+  assert.equal(fake.calls.length, 2, '缓存期内不应重复请求')
+
+  time.advance(USAGE_CACHE_MS + 1)
+  await usage.read(['catgirl', 'mom'])
+  assert.equal(fake.calls.length, 4)
+})
+
+test('read 把 404 当作「还没有计数」跳过', async () => {
+  const fake = fakeFetch(() => jsonResponse({ error: 'Key not found' }, 404))
+  const usage = createUsage({ fetch: fake.fetch, enabled: true })
+  const result = await usage.read(['catgirl'])
+  assert.deepEqual(result.counts, {})
+  assert.equal(result.partial, false)
+})
+
+test('read 部分失败时标 partial 且不写缓存', async () => {
+  const time = clock()
+  let calls = 0
+  const fake = fakeFetch((url) => {
+    calls += 1
+    if (url.endsWith('/mom')) return jsonResponse({ error: 'boom' }, 500)
+    return jsonResponse({ value: 5 })
+  })
+  const usage = createUsage({ fetch: fake.fetch, now: time.now, enabled: true })
+
+  const first = await usage.read(['catgirl', 'mom'])
+  assert.deepEqual(first.counts, { catgirl: 5 })
+  assert.equal(first.partial, true)
+  assert.equal(calls, 2)
+
+  time.advance(10_001)
+  const second = await usage.read(['catgirl', 'mom'])
+  assert.equal(second.partial, true)
+  assert.equal(calls, 4)
+})
+
+test('read 全部失败时返回 null（无缓存）', async () => {
+  const fake = fakeFetch(() => {
+    throw new Error('offline')
+  })
+  const usage = createUsage({ fetch: fake.fetch, enabled: true })
+  assert.equal(await usage.read(['catgirl']), null)
+})
+
+test('超大响应被拒绝', async () => {
+  const huge = 'x'.repeat(USAGE_MAX_BODY + 1)
+  const fake = fakeFetch(() => ({
+    status: 200,
+    ok: true,
+    headers: { get: () => String(huge.length) },
+    text: async () => huge,
+  }))
+  const usage = createUsage({ fetch: fake.fetch, enabled: true })
+  assert.equal(await usage.record('catgirl'), false)
+})
+
+test('read 只请求合法 id，并去掉重复项', async () => {
+  const fake = fakeFetch(() => jsonResponse({ value: 3 }))
+  const usage = createUsage({ fetch: fake.fetch, enabled: true })
+  await usage.read(['catgirl', 'catgirl', 'off', 'custom-x'])
+  assert.equal(fake.calls.length, 1)
+  assert.ok(fake.calls[0].url.endsWith('/get/dsh-persona-modes/catgirl'))
+})
+
+test('并发 read 共享同一次请求', async () => {
+  const fake = fakeFetch(() => jsonResponse({ value: 9 }))
+  const usage = createUsage({ fetch: fake.fetch, enabled: true })
+  const [left, right] = await Promise.all([
+    usage.read(['catgirl']),
+    usage.read(['catgirl']),
+  ])
+  assert.equal(fake.calls.length, 1)
+  assert.deepEqual(left.counts, { catgirl: 9 })
+  assert.deepEqual(right.counts, { catgirl: 9 })
+})
+
+test('未显式传 enabled 时，DSH_PERSONA_USAGE=off 生效', async () => {
+  const original = process.env.DSH_PERSONA_USAGE
+  process.env.DSH_PERSONA_USAGE = 'off'
+  try {
+    const fake = fakeFetch(() => jsonResponse({ value: 1 }))
+    const usage = createUsage({ fetch: fake.fetch })
+    assert.equal(await usage.record('catgirl'), false)
+    assert.equal(await usage.read(['catgirl']), null)
+    assert.equal(fake.calls.length, 0)
+  } finally {
+    if (original === undefined) delete process.env.DSH_PERSONA_USAGE
+    else process.env.DSH_PERSONA_USAGE = original
+  }
+})
+
+test('status 暴露缓存与熔断状态', async () => {
+  const fake = fakeFetch(() => jsonResponse({ value: 1 }))
+  const usage = createUsage({ fetch: fake.fetch, enabled: true })
+  assert.deepEqual(usage.status(), { enabled: true, cachedAt: null, breakerOpenUntil: null })
+  await usage.read(['catgirl'])
+  assert.equal(typeof usage.status().cachedAt, 'number')
+})

@@ -118,14 +118,26 @@ DSH 的 DeepSeek 路由声明了 `systemPromptUpdate: 'in-history'`：同一请�
 
 行为类标签抽象化（2026-11-12，5 轮长对话测试：技术定位 / 技术改写 / 日常短问 / 概念问答 / 情绪闲聊 × 中高档）：显式动作标签会在技术轮与概念轮也补一句健康提醒（中档 5 次、高档 6 次），改为状态描述（妈妈 `提醒喝水休息吃饭` → `关心身心状态`，傲娇 `先做事` → `嘴上嫌弃手上不慢`）后技术/概念轮降到 0，情绪轮仍自然关怀。
 
+## 匿名统计设计（2026-11-20）
+
+统计只回答一个问题：「某个人格被用来对话了多少轮」，不尝试统计唯一用户。
+
+- **计数点选 `turn/start`**：DSH 的 agent-loop 在每轮用户消息开始时追加这一条会话事件，一轮里的多步工具调用不会重复触发。插件用 `ctx.on('session/event')` 旁路监听，不改客户端，也不另存计数。
+- **不做去重**：次数口径下去重没有意义；重装、换机会重复计，这是口径本身，不是缺陷。
+- **只报人格 id**：`off` 与 `custom-*` 排除，避免把用户的私设名称发出去；子代理会话用 `origin: 'subagent'` 排除，分叉会话保留（仍是用户在对话）。
+- **第三方而非自部署**：选 Abacus 是因为零账号、零运维、有公开的 `hit/get`；代价是数据在第三方、键公开可读可刷、无 SLA、六个月无访问会过期。项目不承诺数字准确，只把它当热度参考。
+- **安全边界**：端点硬编码；`redirect: 'error'`、2.5 秒超时、64 KB 上限、20 次/10 秒令牌桶、连续失败熔断 10 分钟、1 小时缓存；所有失败静默降级，回调不抛错，绝不阻塞主循环。
+- **开关**：`state.json` 的 `usage.report` 与 `usage.fetch` 默认都开，读盘时缺失或坏值一律回落开；`DSH_PERSONA_USAGE=off` 可在进程级强制关闭。
+
 ## 文件结构
 
 ```text
-index.js              宿主半：状态、路由、策略段/运行时上下文、/persona 命令
-client.js             客户端半：设置分区、模式卡片、语气强度、人格编辑器、自定义人格 CRUD
+index.js              宿主半：状态、路由、策略段/运行时上下文、/persona 命令、turn/start 计数
+client.js             客户端半：设置分区、模式卡片、语气强度、匿名统计、人格编辑器、自定义人格 CRUD
 src/modes.js          内置人格、称呼/自称合成、强度档位、自定义解析与提示词渲染（单一事实来源）
-src/store.js          状态文件读写、强度/覆盖/自定义人格持久化
-src/routes.js         HTTP 路由与请求校验（state / select / intensity / save / reset / delete）
+src/store.js          状态文件读写、强度/统计开关/覆盖/自定义人格持久化
+src/routes.js         HTTP 路由与请求校验（state / select / intensity / save / reset / delete / usage / usage·prefs）
+src/usage.js          第三方匿名轮次统计：令牌桶、超时、熔断、缓存与响应校验
 locale/{zh,en}.json   插件管理页展示文案
 cordis.patch.yml      bundle patch
 icon.svg              插件图标
@@ -146,11 +158,13 @@ npm test
 - 模式 id 唯一、内置提示词预算（每条 ≤ 300 字）、自定义提示词上限 4000 字、关闭模式 0 字、女儿模式默认值；
 - 称呼/自称合成、内置覆盖、自定义人格解析与视图字段；
 - 低/中/高语气强度标签（维度与程度词、词库分层、无「每段」硬约束）、策略段语气范围约束；
-- 状态文件读写、v1→v2 迁移、强度持久化、坏数据回落、原子写入、写盘失败后的重试；
+- 状态文件读写、v1→v3 迁移、强度与统计开关持久化、坏数据回落、原子写入、写盘失败后的重试；
+- 匿名统计的令牌桶、超时、401/429/500、非法计数、超大响应、404、部分失败与缓存；
+- `turn/start` 计数、子代理过滤、分叉会话保留、`off` 不计数；
 - 自定义人格新建 / 更新 / 恢复默认 / 删除，内置覆盖保存与重置；
-- 路由的 405 / 403 / 413 / ping / state / select / intensity / save / reset / delete / 未知模式；
+- 路由的 405 / 403 / 413 / ping / state / select / intensity / save / reset / delete / usage / usage·prefs / 未知模式；
 - `/persona` 命令的 input 声明、参数解析与切换结果；
-- 客户端工厂、`settings.section` 注册、字典键集、卡片渲染、编辑器渲染、强度分段控件、字数展示与写盘失败提示；
+- 客户端工厂、`settings.section` 注册、字典键集、卡片渲染、编辑器渲染、强度分段控件、统计开关与角标、字数展示与写盘失败提示；
 - 当前人格条里「新建」排在「编辑」左侧、自定义卡片右上角悬浮删除按钮（含纯 icon、aria-label、删除中禁用）。
 
 ## 测试报告
@@ -161,5 +175,5 @@ npm test
 
 ## 版本号语义
 
-按 0.x 处理 —— `0.1.x` 修 bug，`0.2.0` 起加模式或改配置/状态文件形状（状态文件 v2 为
-`{ version, active, intensity, overrides, customModes, updatedAt }`，改形状要同时升 `version` 并写迁移）。
+按 0.x 处理 —— `0.1.x` 修 bug，`0.2.0` 起加模式或改配置/状态文件形状（状态文件 v3 为
+`{ version, active, intensity, usage, overrides, customModes, updatedAt }`，改形状要同时升 `version` 并写迁移）。

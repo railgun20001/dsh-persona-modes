@@ -1,8 +1,10 @@
 /**
  * 人格模式的宿主侧持久化。
  *
- * 状态文件保存三类信息：
+ * 状态文件保存五类信息：
  * - `active`：当前模式 id；
+ * - `intensity`：全局语气强度；
+ * - `usage`：匿名统计的两个开关（是否参与、是否展示）；
  * - `overrides`：内置模式的「称呼 / 自称 / 提示词」覆盖值；
  * - `customModes`：用户新增的自定义人格，每个都带 `defaults` 与 `values`。
  *
@@ -41,8 +43,11 @@ export const STATE_DIR = join(DSH_HOME, 'persona-modes')
 /** 默认状态文件。 */
 export const STATE_FILE = join(STATE_DIR, 'state.json')
 
-/** 状态文件格式版本；未来形状变化时用于迁移。 */
-export const STATE_VERSION = 2
+/** 状态文件格式版本；未来形状变化时用于迁移。v3 增加 `usage` 统计开关。 */
+export const STATE_VERSION = 3
+
+/** 匿名统计的出厂默认：参与与展示都开（用户可在设置里逐项关闭）。 */
+export const DEFAULT_USAGE_PREFS = Object.freeze({ report: true, fetch: true })
 
 /** 名称、称呼、自称等短文本上限。 */
 const MAX_SHORT_TEXT = 40
@@ -88,6 +93,23 @@ function normalizeValues(value, fallback) {
     address: cleanText(source.address ?? fallback.address, MAX_SHORT_TEXT),
     selfName: cleanText(source.selfName ?? fallback.selfName, MAX_SHORT_TEXT),
     prompt: cleanText(source.prompt ?? fallback.prompt, MAX_PROMPT),
+  }
+}
+
+/**
+ * 规整匿名统计开关。
+ *
+ * 缺失、损坏或类型不对的字段一律回落到「开」：默认值只在设置页里改，不在读盘时
+ * 猜测用户意图。只有明确的 `false` 才算关闭。
+ *
+ * @param {unknown} value 原始值。
+ * @returns {{ report: boolean, fetch: boolean }} 规整后的开关。
+ */
+export function normalizeUsagePrefs(value) {
+  const source = value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  return {
+    report: source.report !== false,
+    fetch: source.fetch !== false,
   }
 }
 
@@ -184,6 +206,8 @@ function normalizeOverrides(value) {
  * @returns {{
  *   version: number,
  *   active: string,
+ *   intensity: string,
+ *   usage: { report: boolean, fetch: boolean },
  *   overrides: Record<string, object>,
  *   customModes: Array<object>,
  *   updatedAt?: string,
@@ -201,6 +225,7 @@ export function readStateFile(file = STATE_FILE) {
       version: STATE_VERSION,
       active: parsed.active,
       intensity: normalizeIntensity(parsed.intensity),
+      usage: normalizeUsagePrefs(parsed.usage),
       overrides,
       customModes,
       ...(typeof parsed.updatedAt === 'string' ? { updatedAt: parsed.updatedAt } : {}),
@@ -268,6 +293,7 @@ export function createStore(options = {}) {
     version: STATE_VERSION,
     active: fallback,
     intensity: DEFAULT_INTENSITY,
+    usage: { ...DEFAULT_USAGE_PREFS },
     overrides: {},
     customModes: [],
   }
@@ -296,6 +322,40 @@ export function createStore(options = {}) {
     /** 当前语气强度。 */
     getIntensity() {
       return state.intensity
+    },
+
+    /** 当前匿名统计开关（拷贝，调用方改了也不影响内存状态）。 */
+    getUsage() {
+      return { ...state.usage }
+    },
+
+    /**
+     * 更新匿名统计开关。
+     *
+     * 只接受布尔字段；未知字段与错误类型一律忽略。至少给出一个合法字段，否则
+     * 返回 null，由路由映射成 400。
+     *
+     * @param {unknown} patch 形如 `{ report?: boolean, fetch?: boolean }` 的补丁。
+     * @returns {{ usage: { report: boolean, fetch: boolean }, persisted: boolean } | null} 更新结果。
+     */
+    setUsagePrefs(patch) {
+      if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) return null
+      const next = { ...state.usage }
+      let changed = false
+      if (typeof patch.report === 'boolean') {
+        next.report = patch.report
+        changed = true
+      }
+      if (typeof patch.fetch === 'boolean') {
+        next.fetch = patch.fetch
+        changed = true
+      }
+      if (!changed) return null
+      if (next.report === state.usage.report && next.fetch === state.usage.fetch && persisted) {
+        return { usage: next, persisted: true }
+      }
+      const wrote = commit({ ...state, usage: next, updatedAt: new Date().toISOString() })
+      return { usage: next, persisted: wrote }
     },
 
     /**
@@ -455,6 +515,7 @@ export function createStore(options = {}) {
     snapshot() {
       return {
         ...state,
+        usage: { ...state.usage },
         overrides: Object.fromEntries(
           Object.entries(state.overrides).map(([id, values]) => [id, { ...values }]),
         ),

@@ -507,3 +507,63 @@ const warningButton = flatten(warningTree).find((node) => node.type === 'button'
 assert.ok(warningButton)
 warningButton.props.onClick()
 assert.equal(retrySaved, 1)
+
+// ── 匿名统计 ────────────────────────────────────────────────────────────────
+const { formatCount, normalizeCounts, normalizePayload } = globalThis.__personaExports.__test
+
+assert.equal(formatCount(1234, t), '1,234')
+assert.equal(formatCount(1234567, t), '99,999+')
+assert.equal(formatCount(0, t), '')
+assert.equal(formatCount(-1, t), '')
+assert.equal(formatCount('12', t), '')
+
+assert.deepEqual(
+  normalizeCounts(
+    { counts: { catgirl: 1234, off: 3, 'custom-x': 9, mom: -1, whale: '12' } },
+    data.modes,
+  ),
+  { catgirl: 1234 },
+)
+
+let usagePatch = null
+const usageTree = PersonaView({
+  t,
+  localeId: 'zh',
+  data,
+  pendingId: null,
+  error: null,
+  usage: { report: true, fetch: true },
+  counts: { catgirl: 1234 },
+  countsState: 'ready',
+  usagePending: false,
+  usageError: null,
+  onUsageChange: (patch) => {
+    usagePatch = patch
+  },
+  onSelect: () => {},
+  onRetry: () => {},
+  onEdit: () => {},
+  onCreate: () => {},
+})
+const usageText = textOf(usageTree)
+assert.ok(usageText.includes('匿名统计'))
+assert.ok(usageText.includes('参与统计'))
+assert.ok(usageText.includes('显示统计'))
+assert.ok(usageText.includes('1,234 轮对话'))
+assert.ok(usageText.includes('已上报的聚合计数无法撤回'))
+
+const toggles = flatten(usageTree).filter((node) => node.props?.role === 'switch')
+assert.equal(toggles.length, 2)
+toggles[0].props.onClick()
+assert.deepEqual(usagePatch, { report: false })
+toggles[1].props.onClick()
+assert.deepEqual(usagePatch, { fetch: false })
+
+assert.deepEqual(
+  normalizePayload({ ...data, usage: { report: false } }).usage,
+  { report: false, fetch: true },
+)
+assert.deepEqual(
+  normalizePayload({ ...data }).usage,
+  { report: true, fetch: true },
+)

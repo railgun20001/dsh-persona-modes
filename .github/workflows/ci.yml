@@ -49,6 +49,7 @@ jobs:
               "src/modes.js",
               "src/routes.js",
               "src/store.js",
+              "src/usage.js",
               "cordis.patch.yml",
               "locale/zh.json",
               "locale/en.json",

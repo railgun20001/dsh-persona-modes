@@ -336,6 +336,126 @@ test('debug 返回诊断回调的数据', async () => {
   }
 })
 
+test('state 带回匿名统计开关，默认全开', async () => {
+  const temp = tempStore()
+  try {
+    const handler = createRouteHandler(temp.store, { version: '9.9.9' })
+    const result = await invoke(handler, makeRequest({ action: 'state', headers: SIGNED }))
+    assert.deepEqual(result.body.usage, { report: true, fetch: true })
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('usage 在「显示统计」关闭时直接返回空，不调用计数客户端', async () => {
+  const temp = tempStore()
+  try {
+    temp.store.setUsagePrefs({ fetch: false })
+    let reads = 0
+    const handler = createRouteHandler(temp.store, {
+      version: '9.9.9',
+      usage: {
+        async read() {
+          reads += 1
+          return { counts: {}, at: 1, partial: false }
+        },
+      },
+    })
+    const result = await invoke(handler, makeRequest({ action: 'usage', headers: SIGNED }))
+    assert.equal(result.status, 200)
+    assert.equal(result.body.ok, true)
+    assert.equal(result.body.enabled, false)
+    assert.deepEqual(result.body.counts, {})
+    assert.equal(reads, 0)
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('usage 只请求内置人格，并返回计数与时间戳', async () => {
+  const temp = tempStore()
+  try {
+    let requested = null
+    const handler = createRouteHandler(temp.store, {
+      version: '9.9.9',
+      usage: {
+        async read(ids) {
+          requested = ids
+          return { counts: { catgirl: 12 }, at: 1234, partial: false }
+        },
+      },
+    })
+    const result = await invoke(handler, makeRequest({ action: 'usage', headers: SIGNED }))
+    assert.equal(result.status, 200)
+    assert.equal(result.body.enabled, true)
+    assert.deepEqual(result.body.counts, { catgirl: 12 })
+    assert.equal(result.body.fetchedAt, 1234)
+    assert.deepEqual(
+      requested,
+      MODES.filter((mode) => mode.id !== 'off').map((mode) => mode.id),
+    )
+    assert.ok(requested.every((id) => !id.startsWith('custom-')))
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('usage 在计数客户端抛错时返回空数据而不是 500', async () => {
+  const temp = tempStore()
+  try {
+    const handler = createRouteHandler(temp.store, {
+      version: '9.9.9',
+      usage: {
+        async read() {
+          throw new Error('offline')
+        },
+      },
+    })
+    const result = await invoke(handler, makeRequest({ action: 'usage', headers: SIGNED }))
+    assert.equal(result.status, 200)
+    assert.equal(result.body.ok, true)
+    assert.deepEqual(result.body.counts, {})
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('usage/prefs 更新并持久化开关', async () => {
+  const temp = tempStore()
+  try {
+    const handler = createRouteHandler(temp.store, { version: '9.9.9' })
+    const result = await invoke(handler, makeRequest({
+      action: 'usage/prefs',
+      headers: SIGNED,
+      body: JSON.stringify({ report: false }),
+    }))
+    assert.equal(result.status, 200)
+    assert.deepEqual(result.body.usage, { report: false, fetch: true })
+    assert.deepEqual(temp.store.getUsage(), { report: false, fetch: true })
+    assert.deepEqual(createStore({ file: temp.store.file }).getUsage(), { report: false, fetch: true })
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('usage/prefs 拒绝未知字段、空补丁与非布尔值', async () => {
+  const temp = tempStore()
+  try {
+    const handler = createRouteHandler(temp.store, { version: '9.9.9' })
+    for (const body of [{}, { other: true }, { report: 'yes' }, { report: null }]) {
+      const result = await invoke(handler, makeRequest({
+        action: 'usage/prefs',
+        headers: SIGNED,
+        body: JSON.stringify(body),
+      }))
+      assert.equal(result.status, 400, `应拒绝 ${JSON.stringify(body)}`)
+      assert.equal(result.body.error, 'invalid-input')
+    }
+  } finally {
+    temp.cleanup()
+  }
+})
+
 test('未知动作返回 404', async () => {
   const temp = tempStore()
   try {

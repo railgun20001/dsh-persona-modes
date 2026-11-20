@@ -54,7 +54,7 @@ test('setActive 校验 id、写盘并可被新实例读回', () => {
     assert.equal(reloaded.getActive(), 'catgirl')
 
     const raw = JSON.parse(readFileSync(temp.file, 'utf8'))
-    assert.equal(raw.version, 2)
+    assert.equal(raw.version, 3)
     assert.equal(raw.active, 'catgirl')
     assert.match(raw.updatedAt, /^\d{4}-\d{2}-\d{2}T/u)
   } finally {
@@ -131,9 +131,10 @@ test('readStateFile 接受合法文件并迁移 v1 形状', () => {
   try {
     writeFileSync(temp.file, JSON.stringify({ active: 'whale' }), 'utf8')
     assert.deepEqual(readStateFile(temp.file), {
-      version: 2,
+      version: 3,
       active: 'whale',
       intensity: 'low',
+      usage: { report: true, fetch: true },
       overrides: {},
       customModes: [],
     })
@@ -262,15 +263,64 @@ test('readStateFile 丢弃坏自定义条目与未知覆盖', () => {
   }
 })
 
+test('匿名统计开关默认开、可逐项关闭并持久化', () => {
+  const temp = tempState()
+  try {
+    const store = createStore({ file: temp.file })
+    assert.deepEqual(store.getUsage(), { report: true, fetch: true })
+    assert.deepEqual(store.setUsagePrefs({ report: false }), {
+      usage: { report: false, fetch: true },
+      persisted: true,
+    })
+    assert.deepEqual(createStore({ file: temp.file }).getUsage(), { report: false, fetch: true })
+    assert.deepEqual(store.setUsagePrefs({ fetch: false, report: true }), {
+      usage: { report: true, fetch: false },
+      persisted: true,
+    })
+    assert.equal(store.setUsagePrefs({}), null)
+    assert.equal(store.setUsagePrefs({ report: 'no' }), null)
+    assert.equal(store.setUsagePrefs({ other: true }), null)
+    assert.deepEqual(store.getUsage(), { report: true, fetch: false })
+    assert.deepEqual(JSON.parse(readFileSync(temp.file, 'utf8')).usage, { report: true, fetch: false })
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('旧状态缺少 usage 时默认开，坏值也回落开', () => {
+  const temp = tempState()
+  try {
+    writeFileSync(temp.file, JSON.stringify({ version: 2, active: 'catgirl' }), 'utf8')
+    assert.deepEqual(createStore({ file: temp.file }).getUsage(), { report: true, fetch: true })
+
+    writeFileSync(
+      temp.file,
+      JSON.stringify({ version: 2, active: 'catgirl', usage: { report: 'no', fetch: null } }),
+      'utf8',
+    )
+    assert.deepEqual(createStore({ file: temp.file }).getUsage(), { report: true, fetch: true })
+
+    writeFileSync(
+      temp.file,
+      JSON.stringify({ version: 3, active: 'catgirl', usage: { report: false, fetch: true } }),
+      'utf8',
+    )
+    assert.deepEqual(createStore({ file: temp.file }).getUsage(), { report: false, fetch: true })
+  } finally {
+    temp.cleanup()
+  }
+})
+
 test('writeStateFile 在目标目录不存在时会创建目录', () => {
   const temp = tempState()
   try {
     const nested = join(temp.dir, 'nested', 'state.json')
     assert.equal(writeStateFile({ version: 2, active: 'sharp' }, nested), true)
     assert.deepEqual(readStateFile(nested), {
-      version: 2,
+      version: 3,
       active: 'sharp',
       intensity: 'low',
+      usage: { report: true, fetch: true },
       overrides: {},
       customModes: [],
     })

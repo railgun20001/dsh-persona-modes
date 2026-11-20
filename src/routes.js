@@ -14,7 +14,7 @@
  * @module dsh-persona-modes/routes
  */
 
-import { buildModesView } from './modes.js'
+import { buildModesView, MODES } from './modes.js'
 
 /** 本插件的宿主侧标识；客户端探活时用它确认宿主半确实在。 */
 export const PLUGIN_ID = 'dsh-persona-modes'
@@ -137,6 +137,7 @@ export function buildStatePayload(store, version) {
     version,
     active: view.active,
     intensity: view.intensity,
+    usage: store.getUsage(),
     policy: view.policy,
     runtime: view.runtime,
     modes: view.modes,
@@ -150,6 +151,8 @@ export function buildStatePayload(store, version) {
  * 动作：
  * - `POST /dsh-persona-modes/ping`：宿主半探针（无副作用）；
  * - `POST /dsh-persona-modes/state`：读取当前模式、全部模式与自定义模板；
+ * - `POST /dsh-persona-modes/usage`：读取各人格累计对话轮次（仅当「显示统计」开启）；
+ * - `POST /dsh-persona-modes/usage/prefs`：更新统计开关，body `{ "report"?: boolean, "fetch"?: boolean }`；
  * - `POST /dsh-persona-modes/select`：切换模式，body `{ "id": "catgirl" }`；
  * - `POST /dsh-persona-modes/intensity`：切换全局语气强度，body `{ "value": "low|medium|high" }`；
  * - `POST /dsh-persona-modes/save`：保存称呼/自称/提示词，带 `id` 改已有模式，不带 `id` 新建自定义；
@@ -158,11 +161,12 @@ export function buildStatePayload(store, version) {
  * - `POST /dsh-persona-modes/debug`：只读诊断，返回本插件在组装结果里的段/上下文字数。
  *
  * @param {object} store 模式存储。
- * @param {{ version?: string }} [options] 版本信息。
+ * @param {{ version?: string, diagnostics?: () => Promise<object>, usage?: object }} [options] 版本信息、诊断回调与计数客户端。
  * @returns {(req: object, res: object) => void} node:http 处理器。
  */
 export function createRouteHandler(store, options = {}) {
   const version = typeof options.version === 'string' && options.version !== '' ? options.version : 'unknown'
+  const usage = options.usage ?? null
 
   return (req, res) => {
     const url = typeof req.url === 'string' ? req.url : ''
@@ -190,6 +194,54 @@ export function createRouteHandler(store, options = {}) {
     if (action === 'state') {
       req.resume?.()
       respond(res, 200, buildStatePayload(store, version))
+      return
+    }
+
+    if (action === 'usage') {
+      req.resume?.()
+      const prefs = store.getUsage()
+      if (prefs.fetch !== true || usage === null) {
+        respond(res, 200, { ok: true, enabled: false, counts: {} })
+        return
+      }
+      // 只读内置人格：不把自定义 id 发出去，也不接受客户端指定 id 列表。
+      const ids = MODES.filter((mode) => mode.id !== 'off').map((mode) => mode.id)
+      Promise.resolve(usage.read(ids))
+        .then((result) => {
+          respond(res, 200, {
+            ok: true,
+            enabled: true,
+            counts: result?.counts ?? {},
+            fetchedAt: typeof result?.at === 'number' ? result.at : null,
+            ...(result?.partial === true ? { partial: true } : {}),
+          })
+        })
+        .catch(() => {
+          // 统计失败不是页面错误：回空数据，客户端静默隐藏角标。
+          respond(res, 200, { ok: true, enabled: true, counts: {}, fetchedAt: null })
+        })
+      return
+    }
+
+    if (action === 'usage/prefs') {
+      void readJsonBody(req).then((parsed) => {
+        if (!parsed.ok) {
+          respond(res, parsed.reason === 'too-large' ? 413 : 400, { ok: false, error: parsed.reason })
+          return
+        }
+        const keys = Object.keys(parsed.value)
+        const valid = keys.length > 0 && keys.every((key) => key === 'report' || key === 'fetch')
+        const result = valid ? store.setUsagePrefs(parsed.value) : null
+        if (result === null) {
+          respond(res, 400, { ok: false, error: 'invalid-input' })
+          return
+        }
+        const payload = buildStatePayload(store, version)
+        respond(res, 200, {
+          ...payload,
+          ...(result.persisted ? {} : { persisted: false }),
+        })
+      })
       return
     }
 

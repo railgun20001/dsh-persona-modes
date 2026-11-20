@@ -90,6 +90,85 @@ test('apply 注册路由、策略段、运行时上下文与 /persona 命令', a
   }
 })
 
+test('turn/start 按轮计数，子代理、非轮次事件与 off 不计', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-persona-modes-apply-'))
+  const file = join(dir, 'state.json')
+  const originalFetch = globalThis.fetch
+  const originalEnv = process.env.DSH_PERSONA_USAGE
+  const hits = []
+  globalThis.fetch = async (url) => {
+    hits.push(url)
+    return {
+      status: 200,
+      ok: true,
+      headers: { get: () => '12' },
+      text: async () => JSON.stringify({ value: 1 }),
+    }
+  }
+  delete process.env.DSH_PERSONA_USAGE
+
+  try {
+    let listener = null
+    let command = null
+    const ctx = {
+      inject(deps, callback) {
+        return callback({
+          effect(fn) {
+            return fn()
+          },
+          logger: { info() {} },
+          webServer: { register: () => () => {} },
+          systemPrompt: {
+            section: () => () => {},
+            context: () => () => {},
+          },
+          commands: {
+            register(definition) {
+              command = definition
+              return () => {}
+            },
+          },
+        })
+      },
+      effect(fn) {
+        return fn()
+      },
+      on(name, fn) {
+        if (name === 'session/event') listener = fn
+        return () => {}
+      },
+    }
+
+    apply(ctx, { defaultMode: 'catgirl', stateFile: file })
+    assert.equal(typeof listener, 'function', '没有监听 session/event')
+    assert.equal(typeof command?.handler, 'function')
+
+    listener({ header: {} }, { type: 'turn/start' })
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(hits.length, 1)
+    assert.ok(hits[0].endsWith('/hit/dsh-persona-modes/catgirl'))
+
+    // 子代理会话、非轮次事件不计；分叉会话（只有 parentSession）仍算。
+    listener({ header: { origin: 'subagent' } }, { type: 'turn/start' })
+    listener({ header: { parentSession: 'parent' } }, { type: 'turn/start' })
+    listener({ header: {} }, { type: 'turn/end' })
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(hits.length, 2)
+    assert.ok(hits[1].endsWith('/hit/dsh-persona-modes/catgirl'))
+
+    // 关闭人格后不再计数。
+    await command.handler({ rawInput: ' off' })
+    listener({ header: {} }, { type: 'turn/start' })
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(hits.length, 2)
+  } finally {
+    globalThis.fetch = originalFetch
+    if (originalEnv === undefined) delete process.env.DSH_PERSONA_USAGE
+    else process.env.DSH_PERSONA_USAGE = originalEnv
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('commandHelp 列出当前模式与全部 id', () => {
   const text = commandHelp('whale')
   assert.ok(text.includes('当前人格：鲸鱼娘（whale）'))

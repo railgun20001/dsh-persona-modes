@@ -37,6 +37,7 @@ import {
 } from './src/modes.js'
 import { createRouteHandler, PLUGIN_ID, ROUTE_PATH } from './src/routes.js'
 import { createStore } from './src/store.js'
+import { createUsage } from './src/usage.js'
 
 /** Cordis 插件名（诊断与 patch 行定位用）。 */
 export const name = 'persona-modes'
@@ -92,6 +93,38 @@ export function apply(ctx, config = {}) {
     defaultMode: normalizeModeId(config.defaultMode),
   })
 
+  // 匿名计数客户端：只上报人格 id，失败静默；是否参与由 store 里的开关决定。
+  // User-Agent 不带版本号，尽量少暴露可关联信息。
+  const usage = createUsage({ userAgent: PLUGIN_ID })
+
+  /**
+   * 按「对话轮次」记一次使用。
+   *
+   * 监听 `session/event` 里的 `turn/start`：每一轮用户消息开始时触发一次，一轮里
+   * 无论多少次工具调用都只算一次。子代理会话（`origin: 'subagent'`）不计数，避免
+   * 一次任务里的多次委派把数字抬高；分叉会话仍算，因为那仍是用户在对话。
+   *
+   * 这是旁路统计：回调整体包在 try/catch 里，网络调用 fire-and-forget，任何异常
+   * 都不能影响主循环。
+   */
+  if (typeof ctx.on === 'function') {
+    ctx.on('session/event', (session, event) => {
+      try {
+        if (event?.type !== 'turn/start') return
+        const header = session?.header
+        // 只排除子代理；分叉会话的 parentSession 也会被设置，不能一并排除。
+        if (header?.origin === 'subagent') return
+        if (store.getUsage().report !== true) return
+        const active = store.getActive()
+        // 只统计内置人格：off 与 custom-* 一律不上报。
+        if (active === 'off' || !MODES.some((mode) => mode.id === active)) return
+        void usage.record(active)
+      } catch {
+        /* 统计失败绝不能打断本轮对话 */
+      }
+    })
+  }
+
   /**
    * 只读诊断回调：给 `/debug` 路由用，返回当前组装结果里本插件贡献的段与上下文
    * 名称及字数，不返回系统提示词正文。用于确认插件在真实宿主里确实接上了
@@ -107,7 +140,7 @@ export function apply(ctx, config = {}) {
       () => scoped.webServer.register({
         kind: 'prefix',
         path: ROUTE_PATH,
-        handler: createRouteHandler(store, { version: VERSION, diagnostics: () => diagnostics?.() }),
+        handler: createRouteHandler(store, { version: VERSION, diagnostics: () => diagnostics?.(), usage }),
       }),
       'persona-modes: routes',
     )

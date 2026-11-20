@@ -44,6 +44,9 @@ window.__ModuleLoader__.load({
     /** 设置分区在导航里的排序：排在「通用」「账号」等功能页之后。 */
     const SECTION_ORDER = 30
 
+    /** 单个人格在卡片上的展示上限；与服务端 `USAGE_MAX_COUNT` 一致。 */
+    const USAGE_MAX_COUNT = 99_999
+
     /** 简体中文字典（键集基准）。 */
     const zh = {
       nav: '人格模式',
@@ -68,6 +71,17 @@ window.__ModuleLoader__.load({
       intensityMedium: '中',
       intensityHigh: '高',
       intensityHint: '统一控制所有角色；默认低。',
+      usageTitle: '匿名统计',
+      usageReport: '参与统计',
+      usageFetch: '显示统计',
+      usageHint: '按对话轮次计数，只上报当前人格 id；由第三方 Abacus 托管，数字可能被伪造，仅供参考。',
+      usageNote: '关闭「参与统计」后不再上报；关闭「显示统计」后不再获取或显示角标；已上报的聚合计数无法撤回。',
+      usageBadge: '{count} 轮对话',
+      usageBadgeTitle: '匿名统计：{count} 轮对话，仅供参考',
+      usageCountMax: '99,999+',
+      usageLoading: '正在读取统计…',
+      usageUnavailable: '统计暂时不可用。',
+      usageSaveFailed: '统计设置保存失败。',
       edit: '编辑',
       createCustom: '新建自定义人格',
       editorEditTitle: '编辑人格',
@@ -124,6 +138,17 @@ window.__ModuleLoader__.load({
       intensityMedium: 'Medium',
       intensityHigh: 'High',
       intensityHint: 'Applies to all personas; defaults to low.',
+      usageTitle: 'Anonymous stats',
+      usageReport: 'Contribute counts',
+      usageFetch: 'Show counts',
+      usageHint: 'Counted per conversation turn; only the active persona id is sent. Hosted by Abacus (third party); numbers can be forged and are indicative only.',
+      usageNote: 'Turning off “Contribute counts” stops reporting; turning off “Show counts” stops fetching and hiding badges; counts already sent cannot be withdrawn.',
+      usageBadge: '{count} turns',
+      usageBadgeTitle: 'Anonymous stats: {count} turns, indicative only',
+      usageCountMax: '99,999+',
+      usageLoading: 'Loading stats…',
+      usageUnavailable: 'Stats are temporarily unavailable.',
+      usageSaveFailed: 'Could not save stats settings.',
       edit: 'Edit',
       createCustom: 'New custom persona',
       editorEditTitle: 'Edit persona',
@@ -218,6 +243,49 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * 把计数格式化成卡片上的短文本。
+     *
+     * 只接受正整数；超过上限统一显示「99,999+」，避免第三方返回离谱数字撑破布局。
+     *
+     * @param {unknown} value 原始计数。
+     * @param {(key: string, params?: object) => string} t 翻译函数。
+     * @returns {string} 展示文本；非法值返回空串。
+     */
+    function formatCount(value, t) {
+      if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return ''
+      const count = Math.floor(value)
+      if (count > USAGE_MAX_COUNT) return t('usageCountMax')
+      return String(count).replace(/\B(?=(\d{3})+(?!\d))/gu, ',')
+    }
+
+    /**
+     * 从 `/usage` 响应里筛出可展示的计数。
+     *
+     * 只认内置人格 id，且值必须是正整数；第三方响应里的未知键一律丢弃，避免把
+     * 远端数据直接塞进渲染树。
+     *
+     * @param {unknown} payload 宿主响应。
+     * @param {Array<{ id: string }>} modes 已知模式。
+     * @returns {Record<string, number>} 可展示的计数。
+     */
+    function normalizeCounts(payload, modes) {
+      const source = payload?.counts
+      if (source === null || typeof source !== 'object' || Array.isArray(source)) return {}
+      const known = new Set(
+        (Array.isArray(modes) ? modes : [])
+          .map((mode) => (mode !== null && typeof mode === 'object' ? mode.id : null))
+          .filter((id) => typeof id === 'string' && id !== 'off' && !id.startsWith('custom-')),
+      )
+      const counts = {}
+      for (const [id, value] of Object.entries(source)) {
+        if (!known.has(id)) continue
+        if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) continue
+        counts[id] = value
+      }
+      return counts
+    }
+
+    /**
      * 把宿主错误码映射成用户能读懂的文案。
      *
      * @param {unknown} error 错误对象或字符串。
@@ -242,7 +310,7 @@ window.__ModuleLoader__.load({
      * CORS 头，因此其他网页无法调用。这里只处理 JSON，响应非 2xx 或 `ok !== true`
      * 都抛出带错误码的 Error。请求带超时，避免宿主卡死时设置页永远停在 loading。
      *
-     * @param {'state' | 'select'} action 动作名。
+     * @param {string} action 动作名（`state` / `select` / `usage` / `usage/prefs` 等）。
      * @param {object} [body] 请求体。
      * @returns {Promise<object>} 宿主返回的状态视图。
      */
@@ -307,6 +375,13 @@ window.__ModuleLoader__.load({
       if (typeof data.policy.chars !== 'number') data.policy.chars = data.policy.text.length
       if (data.runtime === null || typeof data.runtime !== 'object') {
         data.runtime = { name: 'persona-modes:active' }
+      }
+      const usage = data.usage !== null && typeof data.usage === 'object' && !Array.isArray(data.usage)
+        ? data.usage
+        : {}
+      data.usage = {
+        report: usage.report !== false,
+        fetch: usage.fetch !== false,
       }
       return data
     }
@@ -459,6 +534,87 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * 一个带滑轨的开关。
+     *
+     * 用 `role="switch"` + `aria-checked`，键盘与读屏都能识别；不依赖原生 checkbox
+     * 的样式覆盖，避免与主题令牌打架。
+     *
+     * @param {object} props 组件属性。
+     * @returns {object} React 元素。
+     */
+    function Toggle({ label, checked, disabled, onChange }) {
+      return h(
+        'button',
+        {
+          type: 'button',
+          role: 'switch',
+          'aria-checked': checked ? 'true' : 'false',
+          className: `pm-toggle${checked ? ' pm-toggle-on' : ''}`,
+          disabled: disabled === true,
+          onClick: () => {
+            if (typeof onChange === 'function') onChange()
+          },
+        },
+        h(
+          'span',
+          { className: 'pm-toggle-track', 'aria-hidden': 'true' },
+          h('span', { className: 'pm-toggle-thumb' }),
+        ),
+        h('span', { className: 'pm-toggle-label' }, label),
+      )
+    }
+
+    /**
+     * 匿名统计设置条。
+     *
+     * 两个开关互相独立：关掉「参与统计」只停止上报；关掉「显示统计」只停止读取与
+     * 展示。说明文字常驻，不依赖用户点开帮助。
+     *
+     * @param {object} props 组件属性。
+     * @returns {object} React 元素。
+     */
+    function UsageBar({ t, usage, pending, error, countsState, onChange }) {
+      const report = usage?.report !== false
+      const show = usage?.fetch !== false
+      return h(
+        'div',
+        { className: 'pm-usage' },
+        h(
+          'div',
+          { className: 'pm-usage-head' },
+          h('span', { className: 'pm-usage-title' }, t('usageTitle')),
+          h('span', { className: 'pm-usage-hint' }, t('usageHint')),
+        ),
+        h(
+          'div',
+          { className: 'pm-usage-controls' },
+          h(Toggle, {
+            label: t('usageReport'),
+            checked: report,
+            disabled: pending === true,
+            onChange: () => {
+              if (typeof onChange === 'function') onChange({ report: !report })
+            },
+          }),
+          h(Toggle, {
+            label: t('usageFetch'),
+            checked: show,
+            disabled: pending === true,
+            onChange: () => {
+              if (typeof onChange === 'function') onChange({ fetch: !show })
+            },
+          }),
+          countsState === 'loading' ? h('span', { className: 'pm-usage-status' }, t('usageLoading')) : null,
+          countsState === 'error' ? h('span', { className: 'pm-usage-status pm-usage-status-error' }, t('usageUnavailable')) : null,
+        ),
+        error === null || error === undefined
+          ? null
+          : h('p', { className: 'pm-inline-error', role: 'alert' }, error),
+        h('p', { className: 'pm-usage-note' }, t('usageNote')),
+      )
+    }
+
+    /**
      * 悬浮删除按钮的垃圾桶图标。
      *
      * 只用内联 SVG：不引入图标库，颜色由 `currentColor` 跟随主题令牌。
@@ -491,10 +647,11 @@ window.__ModuleLoader__.load({
      * @param {object} props 组件属性。
      * @returns {object} React 元素。
      */
-    function ModeCard({ t, localeId, mode, active, pendingId, deleting, onSelect, onDelete }) {
+    function ModeCard({ t, localeId, mode, active, pendingId, deleting, onSelect, onDelete, count }) {
       const selected = mode.id === active
       const busy = pendingId !== null
       const chars = typeof mode.chars === 'number' ? mode.chars : 0
+      const countText = formatCount(count, t)
       const deletable = mode.custom === true && typeof onDelete === 'function'
       const removing = deletable && deleting === true
       return h(
@@ -527,7 +684,19 @@ window.__ModuleLoader__.load({
             h(
               'span',
               { className: 'pm-meta' },
-              chars === 0 ? t('charsZero') : t('chars', { count: chars }),
+              h(
+                'span',
+                {},
+                chars === 0 ? t('charsZero') : t('chars', { count: chars }),
+              ),
+              countText === ''
+                ? null
+                : h(
+                    'span',
+                    { className: 'pm-count', title: t('usageBadgeTitle', { count: countText }) },
+                    ' · ',
+                    t('usageBadge', { count: countText }),
+                  ),
             ),
           ),
           h('span', { className: 'pm-check', 'aria-hidden': 'true' }, '✓'),
@@ -683,6 +852,11 @@ window.__ModuleLoader__.load({
         warning,
         intensity,
         intensityPending,
+        usage,
+        counts,
+        countsState,
+        usagePending,
+        usageError,
         policy,
         editor,
         editorBusy,
@@ -691,6 +865,7 @@ window.__ModuleLoader__.load({
         onRetry,
         onRetrySave,
         onIntensity,
+        onUsageChange,
         onEdit,
         onCreate,
         onEditorChange,
@@ -721,6 +896,14 @@ window.__ModuleLoader__.load({
           value: intensity,
           pending: intensityPending === true,
           onChange: onIntensity,
+        }),
+        h(UsageBar, {
+          t,
+          usage,
+          pending: usagePending === true,
+          error: usageError,
+          countsState,
+          onChange: onUsageChange,
         }),
         editor
           ? h(PersonaEditor, {
@@ -766,6 +949,7 @@ window.__ModuleLoader__.load({
               active: data.active,
               pendingId,
               deleting: deletingId === mode.id,
+              count: counts?.[mode.id],
               onSelect,
               onDelete,
             }),
@@ -797,6 +981,10 @@ window.__ModuleLoader__.load({
       const [intensityPending, setIntensityPending] = react.useState(false)
       const [deletingId, setDeletingId] = react.useState(null)
       const [deleteError, setDeleteError] = react.useState(null)
+      const [counts, setCounts] = react.useState(null)
+      const [countsState, setCountsState] = react.useState('off')
+      const [usagePending, setUsagePending] = react.useState(false)
+      const [usageError, setUsageError] = react.useState(null)
 
       /** 重新读取宿主状态；错误时进入统一错误态，用户可点「重试」。 */
       const load = async () => {
@@ -825,6 +1013,32 @@ window.__ModuleLoader__.load({
           cancelled = true
         }
       }, [])
+
+      // 「显示统计」打开时拉一次计数；切换开关会改变依赖，从而自动重拉或清空。
+      react.useEffect(() => {
+        if (view.phase !== 'ready') return undefined
+        if (view.data?.usage?.fetch !== true) {
+          setCounts(null)
+          setCountsState('off')
+          return undefined
+        }
+        let cancelled = false
+        setCountsState('loading')
+        const run = async () => {
+          try {
+            const data = await postRoute('usage')
+            if (cancelled) return
+            setCounts(normalizeCounts(data, view.data.modes))
+            setCountsState('ready')
+          } catch {
+            if (!cancelled) setCountsState('error')
+          }
+        }
+        void run()
+        return () => {
+          cancelled = true
+        }
+      }, [view.phase, view.data?.usage?.fetch])
 
       const select = async (id) => {
         if (pendingId !== null) return
@@ -864,6 +1078,38 @@ window.__ModuleLoader__.load({
           setView((current) => ({ ...current, error, warning: null }))
         } finally {
           setIntensityPending(false)
+        }
+      }
+
+      /**
+       * 更新匿名统计开关。
+       *
+       * 关掉「显示统计」时立刻清空角标，不等下一次渲染；打开时由上面的 effect
+       * 自动拉取。失败只提示，不影响人格切换。
+       *
+       * @param {{ report?: boolean, fetch?: boolean }} patch 开关补丁。
+       * @returns {Promise<void>} 完成后无返回值。
+       */
+      const changeUsage = async (patch) => {
+        if (usagePending) return
+        setUsagePending(true)
+        setUsageError(null)
+        try {
+          const data = normalizePayload(await postRoute('usage/prefs', patch ?? {}))
+          setView({
+            phase: 'ready',
+            data,
+            error: null,
+            warning: data.persisted === false ? 'not-persisted' : null,
+          })
+          if (patch?.fetch === false) {
+            setCounts(null)
+            setCountsState('off')
+          }
+        } catch {
+          setUsageError(t('usageSaveFailed'))
+        } finally {
+          setUsagePending(false)
         }
       }
 
@@ -1032,6 +1278,12 @@ window.__ModuleLoader__.load({
         warning: view.warning,
         intensity: view.data?.intensity,
         intensityPending,
+        usage: view.data?.usage,
+        counts,
+        countsState,
+        usagePending,
+        usageError,
+        onUsageChange: changeUsage,
         policy: view.data?.policy,
         editor,
         editorBusy,
@@ -1080,6 +1332,22 @@ window.__ModuleLoader__.load({
       .pm-segment-active { background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary); font-weight:600; }
       .pm-segment:disabled { opacity:.6; cursor:default; }
       .pm-intensity-hint { color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
+      .pm-usage { display:flex; flex-direction:column; gap:8px; padding:12px 14px; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-1); }
+      .pm-usage-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; }
+      .pm-usage-title { font-size:13px; line-height:20px; font-weight:600; }
+      .pm-usage-hint { flex:1 1 240px; color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
+      .pm-usage-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; }
+      .pm-toggle { display:inline-flex; align-items:center; gap:6px; padding:3px 10px 3px 3px; border:1px solid var(--dsw-alias-border-l2); border-radius:999px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-secondary); font:inherit; font-size:12px; cursor:pointer; }
+      .pm-toggle-on { border-color:color-mix(in srgb,var(--dsw-alias-label-primary) 35%,transparent); color:var(--dsw-alias-label-primary); }
+      .pm-toggle:disabled { opacity:.6; cursor:default; }
+      .pm-toggle-track { position:relative; flex:0 0 auto; width:26px; height:16px; border-radius:999px; background:var(--dsw-alias-border-l2); transition:background .15s ease; }
+      .pm-toggle-on .pm-toggle-track { background:var(--dsw-alias-label-primary); }
+      .pm-toggle-thumb { position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:999px; background:var(--dsw-alias-bg-layer-1); transition:transform .15s ease; }
+      .pm-toggle-on .pm-toggle-thumb { transform:translateX(10px); }
+      .pm-usage-status { color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
+      .pm-usage-status-error { color:var(--dsw-alias-state-error-primary); }
+      .pm-usage-note { margin:0; color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
+      .pm-count { color:var(--dsw-alias-label-tertiary); font-size:11px; }
       .pm-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
       .pm-card-wrap { position:relative; display:flex; min-width:0; }
       .pm-card { display:flex; align-items:flex-start; gap:10px; width:100%; padding:12px; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-1); color:inherit; font:inherit; text-align:left; cursor:pointer; transition:background .15s ease,border-color .15s ease,box-shadow .15s ease; }
@@ -1203,6 +1471,8 @@ window.__ModuleLoader__.load({
       SECTION_ORDER,
       PersonaView,
       normalizePayload,
+      normalizeCounts,
+      formatCount,
       errorText,
       readLocaleId,
     }

@@ -589,6 +589,31 @@ assert.equal(refreshButton.props.disabled, false)
 refreshButton.props.onClick()
 assert.equal(refreshCalls, 1, '点「刷新」应触发手动刷新')
 
+// 熔断退避期间（自动重试待执行）「刷新」按钮置灰。
+const cooldownTree = PersonaView({
+  t,
+  localeId: 'zh',
+  data,
+  pendingId: null,
+  error: null,
+  usage: { report: true, fetch: true },
+  counts: null,
+  countsState: 'error',
+  usagePending: false,
+  usageError: null,
+  usageRetryPending: true,
+  onRefreshCounts: () => {},
+  onSelect: () => {},
+  onRetry: () => {},
+  onEdit: () => {},
+  onCreate: () => {},
+})
+const cooldownButton = flatten(cooldownTree).find(
+  (node) => node.props?.className === 'pm-usage-refresh',
+)
+assert.ok(cooldownButton, '退避期间也应渲染「刷新」按钮')
+assert.equal(cooldownButton.props.disabled, true, '退避期间「刷新」应置灰')
+
 // 「显示统计」关闭时不渲染刷新按钮。
 const usageOffTree = PersonaView({
   t,

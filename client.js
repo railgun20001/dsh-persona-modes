@@ -590,12 +590,13 @@ window.__ModuleLoader__.load({
      * 上报；关掉「显示统计」只停止读取与展示。页内不写「数字可被伪造」
      * 之类的提示（README 与角标悬停仍保留"仅供参考"），只留一句说明开关
      * 后果与"无法撤回"的注记。打开设置页默认只读宿主缓存，点「刷新」才
-     * 真正向第三方发请求。
+     * 真正向第三方发请求；熔断退避期间自动重试接管，「刷新」按钮置灰，
+     * 免得点了也只是空手而回。
      *
      * @param {object} props 组件属性。
      * @returns {object} React 元素。
      */
-    function UsageBar({ t, usage, pending, error, countsState, onChange, onRefresh }) {
+    function UsageBar({ t, usage, pending, error, countsState, onChange, onRefresh, cooldown }) {
       const report = usage?.report !== false
       const show = usage?.fetch !== false
       const loading = countsState === 'loading'
@@ -615,7 +616,7 @@ window.__ModuleLoader__.load({
                   {
                     type: 'button',
                     className: 'pm-usage-refresh',
-                    disabled: loading || pending === true,
+                    disabled: loading || pending === true || cooldown === true,
                     onClick: () => onRefresh(),
                   },
                   t('usageRefresh'),
@@ -900,6 +901,7 @@ window.__ModuleLoader__.load({
         countsState,
         usagePending,
         usageError,
+        usageRetryPending,
         policy,
         editor,
         editorBusy,
@@ -1005,6 +1007,7 @@ window.__ModuleLoader__.load({
           countsState,
           onChange: onUsageChange,
           onRefresh: onRefreshCounts,
+          cooldown: usageRetryPending === true,
         }),
       )
     }
@@ -1091,6 +1094,8 @@ window.__ModuleLoader__.load({
       /** 重试定时器与已自动重试次数；超过上限后只响应手动「刷新」。 */
       const usageRetryTimer = react.useRef(null)
       const usageRetries = react.useRef(0)
+      /** 自动重试待执行期间置灰「刷新」按钮，避免点也是空手而回。 */
+      const [retryPending, setRetryPending] = react.useState(false)
 
       /** 清掉待执行的重试；状态翻好后由成功分支调用。 */
       const clearUsageRetry = () => {
@@ -1098,6 +1103,7 @@ window.__ModuleLoader__.load({
           clearTimeout(usageRetryTimer.current)
           usageRetryTimer.current = null
         }
+        setRetryPending(false)
       }
 
       react.useEffect(() => clearUsageRetry, [])
@@ -1114,8 +1120,10 @@ window.__ModuleLoader__.load({
         usageRetries.current += 1
         const hinted = typeof data?.retryAfterMs === 'number' && data.retryAfterMs > 0
         const delay = hinted ? Math.min(data.retryAfterMs + 1_000, USAGE_RETRY_MAX_DELAY_MS) : USAGE_RETRY_DELAY_MS
+        setRetryPending(true)
         usageRetryTimer.current = setTimeout(() => {
           usageRetryTimer.current = null
+          setRetryPending(false)
           void refreshCounts()
         }, delay)
       }
@@ -1400,6 +1408,7 @@ window.__ModuleLoader__.load({
         usageError,
         onUsageChange: changeUsage,
         onRefreshCounts: refreshCounts,
+        usageRetryPending: retryPending,
         policy: view.data?.policy,
         editor,
         editorBusy,
@@ -1460,10 +1469,12 @@ window.__ModuleLoader__.load({
       .pm-usage-label { color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; }
       .pm-switch { display:inline-flex; align-items:center; padding:0; border:none; background:transparent; font:inherit; cursor:pointer; }
       .pm-switch:disabled { opacity:.6; cursor:default; }
-      .pm-toggle-track { position:relative; flex:0 0 auto; width:26px; height:16px; border-radius:999px; background:var(--dsw-alias-border-l2); transition:background .15s ease; }
+      .pm-toggle-track { position:relative; flex:0 0 auto; width:32px; height:18px; border-radius:999px; background:var(--dsw-alias-border-l2); transition:background .2s ease; }
       .pm-toggle-on .pm-toggle-track { background:var(--dsw-alias-label-primary); }
-      .pm-toggle-thumb { position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:999px; background:var(--dsw-alias-bg-layer-1); transition:transform .15s ease; }
-      .pm-toggle-on .pm-toggle-thumb { transform:translateX(10px); }
+      .pm-toggle-thumb { position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:999px; background:var(--dsw-alias-bg-layer-1); box-shadow:0 1px 3px rgba(0,0,0,.28); transition:transform .2s cubic-bezier(.34,1.36,.64,1); }
+      .pm-toggle-on .pm-toggle-thumb { transform:translateX(14px); }
+      .pm-switch:hover:not(:disabled) .pm-toggle-thumb { box-shadow:0 1px 4px rgba(0,0,0,.34); }
+      .pm-switch:active:not(:disabled) .pm-toggle-track { filter:brightness(.96); }
       .pm-usage-status { color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
       .pm-usage-status-error { color:var(--dsw-alias-state-error-primary); }
       .pm-usage-note { margin:0; color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }

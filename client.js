@@ -308,6 +308,15 @@ window.__ModuleLoader__.load({
     /** 统计刷新的超时：人格多时宿主会分批限速读取，预留更长等待。 */
     const USAGE_REFRESH_TIMEOUT_MS = 45_000
 
+    /** 读取失败后的自动重试间隔：第三方抖动通常在一两分钟内恢复。 */
+    const USAGE_RETRY_DELAY_MS = 15_000
+
+    /** 宿主熔断给出的退避上限：超过这个等待就没有自动重试的意义。 */
+    const USAGE_RETRY_MAX_DELAY_MS = 90_000
+
+    /** 连续失败后最多自动重试的次数；之后只响应手动「刷新」。 */
+    const USAGE_RETRY_MAX = 5
+
     /**
      * 发一条宿主路由请求。
      *
@@ -543,10 +552,10 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 一个带滑轨的开关。
+     * 一个裸滑轨开关：只有轨道与滑块，没有外框容器，也不在内部重复渲染文字。
      *
-     * 用 `role="switch"` + `aria-checked`，键盘与读屏都能识别；不依赖原生 checkbox
-     * 的样式覆盖，避免与主题令牌打架。
+     * 行内已经有「label：」文字，开关本体只剩图形；文字交给 `aria-label`，
+     * 键盘与读屏仍能识别（`role="switch"` + `aria-checked`）。
      *
      * @param {object} props 组件属性。
      * @returns {object} React 元素。
@@ -558,7 +567,8 @@ window.__ModuleLoader__.load({
           type: 'button',
           role: 'switch',
           'aria-checked': checked ? 'true' : 'false',
-          className: `pm-toggle${checked ? ' pm-toggle-on' : ''}`,
+          'aria-label': label,
+          className: `pm-switch${checked ? ' pm-toggle-on' : ''}`,
           disabled: disabled === true,
           onClick: () => {
             if (typeof onChange === 'function') onChange()
@@ -569,7 +579,6 @@ window.__ModuleLoader__.load({
           { className: 'pm-toggle-track', 'aria-hidden': 'true' },
           h('span', { className: 'pm-toggle-thumb' }),
         ),
-        h('span', { className: 'pm-toggle-label' }, label),
       )
     }
 
@@ -1067,7 +1076,10 @@ window.__ModuleLoader__.load({
             const data = await postRoute('usage')
             if (!cancelled) applyUsageResponse(data)
           } catch {
-            if (!cancelled) setCountsState('error')
+            if (!cancelled) {
+              setCountsState('error')
+              scheduleUsageRetry(null)
+            }
           }
         }
         void run()
@@ -1075,6 +1087,38 @@ window.__ModuleLoader__.load({
           cancelled = true
         }
       }, [view.phase, view.data?.usage?.fetch])
+
+      /** 重试定时器与已自动重试次数；超过上限后只响应手动「刷新」。 */
+      const usageRetryTimer = react.useRef(null)
+      const usageRetries = react.useRef(0)
+
+      /** 清掉待执行的重试；状态翻好后由成功分支调用。 */
+      const clearUsageRetry = () => {
+        if (usageRetryTimer.current !== null) {
+          clearTimeout(usageRetryTimer.current)
+          usageRetryTimer.current = null
+        }
+      }
+
+      react.useEffect(() => clearUsageRetry, [])
+
+      /**
+       * 安排一次自动重试：熔断开着按 `retryAfterMs`（宿主给的退避余量），
+       * 否则按默认间隔；连续失败超过上限就停，交给手动「刷新」。
+       *
+       * @param {object} [data] 最近一次 usage 响应，可能带 `retryAfterMs`。
+       */
+      const scheduleUsageRetry = (data) => {
+        clearUsageRetry()
+        if (usageRetries.current >= USAGE_RETRY_MAX) return
+        usageRetries.current += 1
+        const hinted = typeof data?.retryAfterMs === 'number' && data.retryAfterMs > 0
+        const delay = hinted ? Math.min(data.retryAfterMs + 1_000, USAGE_RETRY_MAX_DELAY_MS) : USAGE_RETRY_DELAY_MS
+        usageRetryTimer.current = setTimeout(() => {
+          usageRetryTimer.current = null
+          void refreshCounts()
+        }, delay)
+      }
 
       /** 把一次 usage 响应落到本地状态；供自动加载与手动刷新共用。 */
       const applyUsageResponse = (data) => {
@@ -1086,11 +1130,14 @@ window.__ModuleLoader__.load({
         }
         if (typeof data?.fetchedAt !== 'number') {
           // 第三方整体读取失败：角标隐藏，但在设置条上给出可见提示，
-          // 避免「什么都没有」被误读成「没人用过」。
+          // 避免「什么都没有」被误读成「没人用过」。随后自动重试自愈。
           setCounts(null)
           setCountsState('error')
+          scheduleUsageRetry(data)
           return
         }
+        clearUsageRetry()
+        usageRetries.current = 0
         setCounts(normalizeCounts(data, view.data.modes))
         setCountsState('ready')
       }
@@ -1104,6 +1151,7 @@ window.__ModuleLoader__.load({
           applyUsageResponse(await postRoute('usage', { refresh: true }, { timeoutMs: USAGE_REFRESH_TIMEOUT_MS }))
         } catch {
           setCountsState('error')
+          scheduleUsageRetry(null)
         }
       }
 
@@ -1410,9 +1458,8 @@ window.__ModuleLoader__.load({
       .pm-usage-rows { display:flex; flex-direction:column; align-items:flex-start; gap:6px; }
       .pm-usage-row { display:flex; align-items:center; gap:8px; }
       .pm-usage-label { color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; }
-      .pm-toggle { display:inline-flex; align-items:center; gap:6px; padding:3px 10px 3px 3px; border:1px solid var(--dsw-alias-border-l2); border-radius:999px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-secondary); font:inherit; font-size:12px; cursor:pointer; }
-      .pm-toggle-on { border-color:color-mix(in srgb,var(--dsw-alias-label-primary) 35%,transparent); color:var(--dsw-alias-label-primary); }
-      .pm-toggle:disabled { opacity:.6; cursor:default; }
+      .pm-switch { display:inline-flex; align-items:center; padding:0; border:none; background:transparent; font:inherit; cursor:pointer; }
+      .pm-switch:disabled { opacity:.6; cursor:default; }
       .pm-toggle-track { position:relative; flex:0 0 auto; width:26px; height:16px; border-radius:999px; background:var(--dsw-alias-border-l2); transition:background .15s ease; }
       .pm-toggle-on .pm-toggle-track { background:var(--dsw-alias-label-primary); }
       .pm-toggle-thumb { position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:999px; background:var(--dsw-alias-bg-layer-1); transition:transform .15s ease; }

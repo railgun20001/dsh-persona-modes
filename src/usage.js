@@ -45,8 +45,14 @@ export const USAGE_BUCKET_WINDOW_MS = 10 * 1_000
 /** 连续失败多少次后熔断。 */
 export const USAGE_BREAKER_THRESHOLD = 3
 
-/** 熔断时长；期间不再发请求，直接用缓存或静默隐藏。 */
-export const USAGE_BREAKER_MS = 10 * 60 * 1_000
+/**
+ * 熔断时长；期间不再发请求，直接用缓存或静默隐藏。
+ *
+ * 统计只是装饰性数据：熔断太久（比如十分钟）会让「统计暂时不可用」在页面上
+ * 停留得比实际网络故障还久，用户反复点刷新也救不回来；一分钟足够让限流
+ * 窗口复位，客户端还会按 `retryAfterMs` 自动重试。
+ */
+export const USAGE_BREAKER_MS = 60 * 1_000
 
 /** 单个人格显示上限；超过后前端显示为「99,999+」。 */
 export const USAGE_MAX_COUNT = 99_999
@@ -322,7 +328,11 @@ export function createUsage(options = {}) {
       while (queue.length > 0) {
         refill(now())
         const size = Math.min(queue.length, USAGE_READ_CHUNK, Math.max(1, Math.floor(tokens)))
-        take(size)
+        if (!take(size)) {
+          // 理论上不会走到这里（size 已按当前令牌数收缩）；兜底等一个令牌再试。
+          await sleep(USAGE_BUCKET_WINDOW_MS / USAGE_BUCKET_CAPACITY)
+          continue
+        }
         const batch = queue.splice(0, size)
         await Promise.all(batch.map(fetchOne))
         if (queue.length === 0) break

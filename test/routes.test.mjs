@@ -457,6 +457,62 @@ test('usage 把请求体里的 refresh 布尔传给计数客户端', async () =>
   }
 })
 
+test('usage 整体失败且熔断开启时返回 retryAfterMs', async () => {
+  const temp = tempStore()
+  try {
+    const handler = createRouteHandler(temp.store, {
+      version: '9.9.9',
+      usage: {
+        async read() {
+          return null
+        },
+        status() {
+          return { breakerOpenUntil: Date.now() + 30_000 }
+        },
+      },
+    })
+    const result = await invoke(handler, makeRequest({ action: 'usage', headers: SIGNED }))
+    assert.equal(result.status, 200)
+    assert.equal(result.body.fetchedAt, null)
+    assert.equal(typeof result.body.retryAfterMs, 'number', '熔断开启时应带回重试等待')
+    assert.ok(result.body.retryAfterMs > 0 && result.body.retryAfterMs <= 40_000)
+
+    // 熔断未开时的整体失败：不带提示字段，客户端按默认间隔重试。
+    const closedHandler = createRouteHandler(temp.store, {
+      version: '9.9.9',
+      usage: {
+        async read() {
+          return null
+        },
+        status() {
+          return { breakerOpenUntil: null }
+        },
+      },
+    })
+    const closed = await invoke(closedHandler, makeRequest({ action: 'usage', headers: SIGNED }))
+    assert.equal(closed.body.fetchedAt, null)
+    assert.equal(closed.body.retryAfterMs, undefined)
+
+    // 读取成功时永远不带提示字段。
+    const okHandler = createRouteHandler(temp.store, {
+      version: '9.9.9',
+      usage: {
+        async read() {
+          return { counts: { catgirl: 1 }, at: 5, partial: false }
+        },
+        status() {
+          return { breakerOpenUntil: Date.now() + 30_000 }
+        },
+      },
+    })
+    const okResult = await invoke(okHandler, makeRequest({ action: 'usage', headers: SIGNED }))
+    assert.equal(okResult.body.fetchedAt, 5)
+    assert.equal(okResult.body.retryAfterMs, undefined)
+  } finally {
+    temp.cleanup()
+  }
+})
+
 test('usage/prefs 更新并持久化开关', async () => {
   const temp = tempStore()
   try {

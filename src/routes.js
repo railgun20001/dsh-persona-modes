@@ -51,6 +51,25 @@ function respond(res, status, body) {
 }
 
 /**
+ * 整体读取失败时给出自动重试的等待毫秒数，客户端据此安排自愈重试。
+ *
+ * 只有熔断确实开着才提示：熔断兜底期间重试注定空手而归；没开熔断说明
+ * 是网络抖动，客户端按默认间隔自行重试。
+ *
+ * @param {object} usage 计数客户端。
+ * @param {{ at?: number } | null} result 读取结果。
+ * @returns {{ retryAfterMs?: number }} 追加进响应体的字段。
+ */
+function buildRetryHint(usage, result) {
+  if (typeof result?.at === 'number') return {}
+  const breaker = typeof usage.status === 'function' ? usage.status() : null
+  const openUntil = breaker === null ? null : breaker.breakerOpenUntil
+  const now = Date.now()
+  if (typeof openUntil !== 'number' || openUntil <= now) return {}
+  return { retryAfterMs: openUntil - now + 1_000 }
+}
+
+/**
  * 判断请求是否带签名头。
  *
  * Node 会把重复的头合并成数组，所以两种形状都要认。
@@ -221,11 +240,12 @@ export function createRouteHandler(store, options = {}) {
               counts: result?.counts ?? {},
               fetchedAt: typeof result?.at === 'number' ? result.at : null,
               ...(result?.partial === true ? { partial: true } : {}),
+              ...buildRetryHint(usage, result),
             })
           })
           .catch(() => {
             // 统计失败不是页面错误：回空数据，客户端按整体失败提示处理。
-            respond(res, 200, { ok: true, enabled: true, counts: {}, fetchedAt: null })
+            respond(res, 200, { ok: true, enabled: true, counts: {}, fetchedAt: null, ...buildRetryHint(usage, null) })
           })
       })
       return

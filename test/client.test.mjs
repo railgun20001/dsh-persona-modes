@@ -562,6 +562,14 @@ assert.ok(usageText.includes('已上报的聚合计数无法撤回'))
 
 const toggles = flatten(usageTree).filter((node) => node.props?.role === 'switch')
 assert.equal(toggles.length, 2)
+// 裸开关：不重复渲染 label 文字，无外框容器，文字只在 aria-label 里。
+assert.equal(toggles[0].props['aria-label'], '参与统计')
+assert.equal(toggles[1].props['aria-label'], '显示统计')
+assert.ok(toggles.every((node) => node.props.className === 'pm-switch pm-toggle-on'))
+assert.ok(
+  !flatten(usageTree).some((node) => node.props?.className === 'pm-toggle-label'),
+  '开关内部不应再渲染 label 文字',
+)
 toggles[0].props.onClick()
 assert.deepEqual(usagePatch, { report: false })
 toggles[1].props.onClick()

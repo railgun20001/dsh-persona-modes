@@ -74,7 +74,9 @@ window.__ModuleLoader__.load({
       usageTitle: '匿名统计',
       usageReport: '参与统计',
       usageFetch: '显示统计',
-      usageNote: '关闭「参与统计」后不再上报；关闭「显示统计」后不再获取或显示角标；已上报的聚合计数无法撤回。',
+      usageColon: '：',
+      usageRefresh: '刷新',
+      usageNote: '关闭「参与统计」后不再上报；关闭「显示统计」后不再获取或显示角标；已上报的聚合计数无法撤回。数字每日走缓存，点「刷新」立即更新。',
       usageBadge: '热度 {count}',
       usageBadgeTitle: '匿名统计：热度 {count}，仅供参考',
       usageCountMax: '99,999+',
@@ -140,7 +142,9 @@ window.__ModuleLoader__.load({
       usageTitle: 'Anonymous stats',
       usageReport: 'Contribute counts',
       usageFetch: 'Show counts',
-      usageNote: 'Turning off “Contribute counts” stops reporting; turning off “Show counts” stops fetching and hides badges; counts already sent cannot be withdrawn.',
+      usageColon: ': ',
+      usageRefresh: 'Refresh',
+      usageNote: 'Turning off “Contribute counts” stops reporting; turning off “Show counts” stops fetching and hides badges; counts already sent cannot be withdrawn. Numbers come from a daily cache; press “Refresh” to update immediately.',
       usageBadge: 'Heat {count}',
       usageBadgeTitle: 'Anonymous stats: heat {count}, indicative only',
       usageCountMax: '99,999+',
@@ -301,6 +305,9 @@ window.__ModuleLoader__.load({
     /** 单次宿主请求超时；超时后走统一错误态，页面仍可重试。 */
     const REQUEST_TIMEOUT_MS = 15_000
 
+    /** 统计刷新的超时：人格多时宿主会分批限速读取，预留更长等待。 */
+    const USAGE_REFRESH_TIMEOUT_MS = 45_000
+
     /**
      * 发一条宿主路由请求。
      *
@@ -310,12 +317,16 @@ window.__ModuleLoader__.load({
      *
      * @param {string} action 动作名（`state` / `select` / `usage` / `usage/prefs` 等）。
      * @param {object} [body] 请求体。
+     * @param {{ timeoutMs?: number }} [settings] 可选的每次请求设置。
      * @returns {Promise<object>} 宿主返回的状态视图。
      */
-    async function postRoute(action, body) {
+    async function postRoute(action, body, settings = {}) {
       if (typeof fetch !== 'function') throw new Error('host-missing')
+      const timeoutMs = typeof settings.timeoutMs === 'number' && settings.timeoutMs > 0
+        ? settings.timeoutMs
+        : REQUEST_TIMEOUT_MS
       const controller = typeof AbortController === 'function' ? new AbortController() : null
-      const timer = controller === null ? null : setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+      const timer = controller === null ? null : setTimeout(() => controller.abort(), timeoutMs)
       let response
       try {
         response = await fetch(`${ROUTE}/${action}`, {
@@ -565,41 +576,75 @@ window.__ModuleLoader__.load({
     /**
      * 匿名统计设置条：位于设置页最底部。
      *
-     * 两个开关互相独立：关掉「参与统计」只停止上报；关掉「显示统计」只停止读取与
-     * 展示。页内不写「数字可被伪造」之类的提示（README 与角标悬停仍保留"仅供参考"），
-     * 只留一句说明开关后果与"无法撤回"的注记。
+     * 布局：标题行（标题 + 手动「刷新」按钮 + 状态），下面两行
+     * 「label：开关」逐行排列。两个开关互相独立：关掉「参与统计」只停止
+     * 上报；关掉「显示统计」只停止读取与展示。页内不写「数字可被伪造」
+     * 之类的提示（README 与角标悬停仍保留"仅供参考"），只留一句说明开关
+     * 后果与"无法撤回"的注记。打开设置页默认只读宿主缓存，点「刷新」才
+     * 真正向第三方发请求。
      *
      * @param {object} props 组件属性。
      * @returns {object} React 元素。
      */
-    function UsageBar({ t, usage, pending, error, countsState, onChange }) {
+    function UsageBar({ t, usage, pending, error, countsState, onChange, onRefresh }) {
       const report = usage?.report !== false
       const show = usage?.fetch !== false
+      const loading = countsState === 'loading'
       return h(
         'div',
         { className: 'pm-usage' },
         h(
           'div',
-          { className: 'pm-usage-controls' },
+          { className: 'pm-usage-head' },
           h('span', { className: 'pm-usage-title' }, t('usageTitle')),
-          h(Toggle, {
-            label: t('usageReport'),
-            checked: report,
-            disabled: pending === true,
-            onChange: () => {
-              if (typeof onChange === 'function') onChange({ report: !report })
-            },
-          }),
-          h(Toggle, {
-            label: t('usageFetch'),
-            checked: show,
-            disabled: pending === true,
-            onChange: () => {
-              if (typeof onChange === 'function') onChange({ fetch: !show })
-            },
-          }),
-          countsState === 'loading' ? h('span', { className: 'pm-usage-status' }, t('usageLoading')) : null,
-          countsState === 'error' ? h('span', { className: 'pm-usage-status pm-usage-status-error' }, t('usageUnavailable')) : null,
+          h(
+            'span',
+            { className: 'pm-usage-side' },
+            show && typeof onRefresh === 'function'
+              ? h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'pm-usage-refresh',
+                    disabled: loading || pending === true,
+                    onClick: () => onRefresh(),
+                  },
+                  t('usageRefresh'),
+                )
+              : null,
+            loading ? h('span', { className: 'pm-usage-status' }, t('usageLoading')) : null,
+            countsState === 'error' ? h('span', { className: 'pm-usage-status pm-usage-status-error' }, t('usageUnavailable')) : null,
+          ),
+        ),
+        h(
+          'div',
+          { className: 'pm-usage-rows' },
+          h(
+            'div',
+            { className: 'pm-usage-row' },
+            h('span', { className: 'pm-usage-label' }, t('usageReport'), t('usageColon')),
+            h(Toggle, {
+              label: t('usageReport'),
+              checked: report,
+              disabled: pending === true,
+              onChange: () => {
+                if (typeof onChange === 'function') onChange({ report: !report })
+              },
+            }),
+          ),
+          h(
+            'div',
+            { className: 'pm-usage-row' },
+            h('span', { className: 'pm-usage-label' }, t('usageFetch'), t('usageColon')),
+            h(Toggle, {
+              label: t('usageFetch'),
+              checked: show,
+              disabled: pending === true,
+              onChange: () => {
+                if (typeof onChange === 'function') onChange({ fetch: !show })
+              },
+            }),
+          ),
         ),
         error === null || error === undefined
           ? null
@@ -855,6 +900,7 @@ window.__ModuleLoader__.load({
         onRetrySave,
         onIntensity,
         onUsageChange,
+        onRefreshCounts,
         onEdit,
         onCreate,
         onEditorChange,
@@ -949,6 +995,7 @@ window.__ModuleLoader__.load({
           error: usageError,
           countsState,
           onChange: onUsageChange,
+          onRefresh: onRefreshCounts,
         }),
       )
     }
@@ -1004,7 +1051,8 @@ window.__ModuleLoader__.load({
         }
       }, [])
 
-      // 「显示统计」打开时拉一次计数；切换开关会改变依赖，从而自动重拉或清空。
+      // 「显示统计」打开时拉一次计数；宿主默认只读缓存，不会每次打开设置页
+      // 都打第三方。切换开关会改变依赖，从而自动重拉或清空。
       react.useEffect(() => {
         if (view.phase !== 'ready') return undefined
         if (view.data?.usage?.fetch !== true) {
@@ -1017,22 +1065,7 @@ window.__ModuleLoader__.load({
         const run = async () => {
           try {
             const data = await postRoute('usage')
-            if (cancelled) return
-            if (data?.enabled === false) {
-              // 开关在别处（比如另一个窗口）被关掉：跟随它，不再显示。
-              setCounts(null)
-              setCountsState('off')
-              return
-            }
-            if (typeof data?.fetchedAt !== 'number') {
-              // 第三方整体读取失败：角标隐藏，但在设置条上给出可见提示，
-              // 避免「什么都没有」被误读成「没人用过」。
-              setCounts(null)
-              setCountsState('error')
-              return
-            }
-            setCounts(normalizeCounts(data, view.data.modes))
-            setCountsState('ready')
+            if (!cancelled) applyUsageResponse(data)
           } catch {
             if (!cancelled) setCountsState('error')
           }
@@ -1042,6 +1075,37 @@ window.__ModuleLoader__.load({
           cancelled = true
         }
       }, [view.phase, view.data?.usage?.fetch])
+
+      /** 把一次 usage 响应落到本地状态；供自动加载与手动刷新共用。 */
+      const applyUsageResponse = (data) => {
+        if (data?.enabled === false) {
+          // 开关在别处（比如另一个窗口）被关掉：跟随它，不再显示。
+          setCounts(null)
+          setCountsState('off')
+          return
+        }
+        if (typeof data?.fetchedAt !== 'number') {
+          // 第三方整体读取失败：角标隐藏，但在设置条上给出可见提示，
+          // 避免「什么都没有」被误读成「没人用过」。
+          setCounts(null)
+          setCountsState('error')
+          return
+        }
+        setCounts(normalizeCounts(data, view.data.modes))
+        setCountsState('ready')
+      }
+
+      /** 手动刷新：跳过宿主缓存重新读取；人格多时宿主会分批限速，需要等更久。 */
+      const refreshCounts = async () => {
+        if (view.phase !== 'ready' || view.data?.usage?.fetch !== true) return
+        if (countsState === 'loading' || usagePending) return
+        setCountsState('loading')
+        try {
+          applyUsageResponse(await postRoute('usage', { refresh: true }, { timeoutMs: USAGE_REFRESH_TIMEOUT_MS }))
+        } catch {
+          setCountsState('error')
+        }
+      }
 
       const select = async (id) => {
         if (pendingId !== null) return
@@ -1287,6 +1351,7 @@ window.__ModuleLoader__.load({
         usagePending,
         usageError,
         onUsageChange: changeUsage,
+        onRefreshCounts: refreshCounts,
         policy: view.data?.policy,
         editor,
         editorBusy,
@@ -1335,9 +1400,16 @@ window.__ModuleLoader__.load({
       .pm-segment-active { background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary); font-weight:600; }
       .pm-segment:disabled { opacity:.6; cursor:default; }
       .pm-intensity-hint { color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
-      .pm-usage { display:flex; flex-direction:column; gap:6px; padding:10px 14px; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-1); }
+      .pm-usage { display:flex; flex-direction:column; gap:8px; padding:10px 14px; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-1); }
+      .pm-usage-head { display:flex; align-items:center; gap:8px; }
       .pm-usage-title { font-size:12px; line-height:18px; font-weight:600; }
-      .pm-usage-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; }
+      .pm-usage-side { margin-left:auto; display:flex; align-items:center; gap:8px; }
+      .pm-usage-refresh { padding:2px 10px; border:1px solid var(--dsw-alias-border-l2); border-radius:6px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-secondary); font:inherit; font-size:11px; line-height:16px; cursor:pointer; }
+      .pm-usage-refresh:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover); color:var(--dsw-alias-label-primary); }
+      .pm-usage-refresh:disabled { opacity:.6; cursor:default; }
+      .pm-usage-rows { display:flex; flex-direction:column; align-items:flex-start; gap:6px; }
+      .pm-usage-row { display:flex; align-items:center; gap:8px; }
+      .pm-usage-label { color:var(--dsw-alias-label-secondary); font-size:12px; line-height:18px; }
       .pm-toggle { display:inline-flex; align-items:center; gap:6px; padding:3px 10px 3px 3px; border:1px solid var(--dsw-alias-border-l2); border-radius:999px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-secondary); font:inherit; font-size:12px; cursor:pointer; }
       .pm-toggle-on { border-color:color-mix(in srgb,var(--dsw-alias-label-primary) 35%,transparent); color:var(--dsw-alias-label-primary); }
       .pm-toggle:disabled { opacity:.6; cursor:default; }

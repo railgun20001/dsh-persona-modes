@@ -24,11 +24,14 @@ export const USAGE_NAMESPACE = 'dsh-persona-modes'
 /** 单次网络请求超时；统计慢不能拖住设置页。 */
 export const USAGE_TIMEOUT_MS = 2_500
 
-/** 读取结果的缓存时长；避免每次打开设置页都打一轮请求。 */
-export const USAGE_CACHE_MS = 60 * 60 * 1_000
+/** 读取结果的缓存时长：打开设置页默认只读缓存，过期或点「刷新」才再请求第三方。 */
+export const USAGE_CACHE_MS = 24 * 60 * 60 * 1_000
 
-/** 部分成功的读取只缓存一小会儿：下次打开设置页能尽快补齐失败的那几个键。 */
-export const USAGE_PARTIAL_CACHE_MS = 10 * 60 * 1_000
+/** 部分成功的读取缓存得短一些：失败的那几个键下次能尽快补齐。 */
+export const USAGE_PARTIAL_CACHE_MS = 60 * 60 * 1_000
+
+/** 单批最大请求数：人格再多也只是读得慢，任意 10 秒窗口内的请求数不超过桶容量。 */
+export const USAGE_READ_CHUNK = 10
 
 /** 响应体上限；正常响应只有几十字节，超过即视为异常。 */
 export const USAGE_MAX_BODY = 64 * 1024
@@ -108,10 +111,11 @@ function timeoutSignal(ms) {
  *   now?: () => number,
  *   enabled?: boolean,
  *   userAgent?: string,
- * }} [options] 注入项；测试用假 fetch 与假时钟，绝不访问真实服务。
+ *   sleep?: (ms: number) => Promise<void>,
+ * }} [options] 注入项；测试用假 fetch、假时钟与假 sleep，绝不访问真实服务。
  * @returns {{
  *   record: (id: string) => Promise<boolean>,
- *   read: (ids: string[]) => Promise<{ counts: Record<string, number>, at: number, partial: boolean } | null>,
+ *   read: (ids: string[], settings?: { refresh?: boolean }) => Promise<{ counts: Record<string, number>, at: number, partial: boolean } | null>,
  *   status: () => { enabled: boolean, cachedAt: number | null, breakerOpenUntil: number | null },
  * }} 计数客户端。
  */
@@ -125,6 +129,13 @@ export function createUsage(options = {}) {
   const userAgent = typeof options.userAgent === 'string' && options.userAgent !== ''
     ? options.userAgent
     : 'dsh-persona-modes'
+  // 分批限速的等待函数；测试注入假实现并拨动假时钟。
+  const sleep = typeof options.sleep === 'function'
+    ? options.sleep
+    : (ms) => new Promise((resolve) => {
+        const timer = setTimeout(resolve, ms)
+        if (typeof timer?.unref === 'function') timer.unref()
+      })
 
   let tokens = USAGE_BUCKET_CAPACITY
   let lastRefill = now()
@@ -252,28 +263,29 @@ export function createUsage(options = {}) {
   /**
    * 读取一批人格的累计轮次。
    *
-   * 返回 null 表示「没有任何可展示的数据」；部分成功时 `partial` 为 true 且不写缓存，
-   * 下次打开设置页会重试。
+   * 返回 null 表示「没有任何可展示的数据」。结果按整全/部分分别写入
+   * 长/短缓存；`settings.refresh === true`（手动点「刷新」）时跳过新鲜度
+   * 检查，但熔断与令牌桶仍然生效。人格数量超过桶容量时自动分批限速，
+   * 任意 10 秒窗口内的请求数不会超过桶容量，只是读得慢一些。
    *
    * @param {string[]} ids 人格 id 列表。
+   * @param {{ refresh?: boolean }} [settings] 读取选项。
    * @returns {Promise<{ counts: Record<string, number>, at: number, partial: boolean } | null>} 读取结果。
    */
-  async function read(ids) {
+  async function read(ids, settings = {}) {
     if (!enabled) return null
     const wanted = [...new Set(Array.isArray(ids) ? ids : [])].filter(isCountableId)
     if (wanted.length === 0) return { counts: {}, at: now(), partial: false }
 
+    const skipCache = settings?.refresh === true
     const startedAt = now()
-    if (cache !== null && startedAt - cache.at < (cache.partial ? USAGE_PARTIAL_CACHE_MS : USAGE_CACHE_MS)) {
+    if (!skipCache && cache !== null && startedAt - cache.at < (cache.partial ? USAGE_PARTIAL_CACHE_MS : USAGE_CACHE_MS)) {
       return { counts: { ...cache.counts }, at: cache.at, partial: cache.partial }
     }
     if (startedAt < openUntil) {
       return cache === null ? null : { counts: { ...cache.counts }, at: cache.at, partial: true }
     }
     if (inflightRead !== null) return inflightRead
-    if (!take(wanted.length)) {
-      return cache === null ? null : { counts: { ...cache.counts }, at: cache.at, partial: true }
-    }
 
     const pending = (async () => {
       /** @type {Record<string, number>} */
@@ -282,7 +294,7 @@ export function createUsage(options = {}) {
       let failed = 0
       let limited = false
 
-      await Promise.all(wanted.map(async (id) => {
+      const fetchOne = async (id) => {
         try {
           const data = await requestJson(
             `${USAGE_BASE_URL}/get/${USAGE_NAMESPACE}/${id}`,
@@ -302,7 +314,24 @@ export function createUsage(options = {}) {
           // 撞上就退避一分钟，让窗口复位，而不是把失败当成数据。
           if (error?.status === 429) limited = true
         }
-      }))
+      }
+
+      // 分批限速：单批不超过 USAGE_READ_CHUNK 与当前令牌数，批间按桶的
+      // 恢复速率等待。人格再多也只是把读取时间拉长，而不是打爆第三方限流。
+      const queue = wanted.slice()
+      while (queue.length > 0) {
+        refill(now())
+        const size = Math.min(queue.length, USAGE_READ_CHUNK, Math.max(1, Math.floor(tokens)))
+        take(size)
+        const batch = queue.splice(0, size)
+        await Promise.all(batch.map(fetchOne))
+        if (queue.length === 0) break
+        const want = Math.min(queue.length, USAGE_READ_CHUNK)
+        const deficit = want - tokens
+        if (deficit > 0) {
+          await sleep(Math.ceil(deficit * (USAGE_BUCKET_WINDOW_MS / USAGE_BUCKET_CAPACITY)))
+        }
+      }
 
       if (ok === 0) {
         noteFailure(limited ? 429 : 0)

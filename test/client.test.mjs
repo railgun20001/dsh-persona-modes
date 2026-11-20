@@ -526,6 +526,7 @@ assert.deepEqual(
 )
 
 let usagePatch = null
+let refreshCalls = 0
 const usageTree = PersonaView({
   t,
   localeId: 'zh',
@@ -539,6 +540,9 @@ const usageTree = PersonaView({
   usageError: null,
   onUsageChange: (patch) => {
     usagePatch = patch
+  },
+  onRefreshCounts: () => {
+    refreshCalls += 1
   },
   onSelect: () => {},
   onRetry: () => {},
@@ -562,6 +566,42 @@ toggles[0].props.onClick()
 assert.deepEqual(usagePatch, { report: false })
 toggles[1].props.onClick()
 assert.deepEqual(usagePatch, { fetch: false })
+
+// 两个开关按「label：开关」逐行排列，右侧提供手动刷新按钮。
+const usageFlat = flatten(usageTree)
+const usageRows = usageFlat.filter((node) => node.props?.className === 'pm-usage-row')
+assert.equal(usageRows.length, 2, '应为两个开关各渲染一行')
+assert.ok(usageText.includes('参与统计：'), '第一行应有「参与统计：」标签')
+assert.ok(usageText.includes('显示统计：'), '第二行应有「显示统计：」标签')
+const refreshButton = usageFlat.find(
+  (node) => node.props?.className === 'pm-usage-refresh',
+)
+assert.ok(refreshButton, '没有渲染「刷新」按钮')
+assert.equal(refreshButton.props.disabled, false)
+refreshButton.props.onClick()
+assert.equal(refreshCalls, 1, '点「刷新」应触发手动刷新')
+
+// 「显示统计」关闭时不渲染刷新按钮。
+const usageOffTree = PersonaView({
+  t,
+  localeId: 'zh',
+  data,
+  pendingId: null,
+  error: null,
+  usage: { report: true, fetch: false },
+  counts: null,
+  countsState: 'off',
+  usagePending: false,
+  usageError: null,
+  onSelect: () => {},
+  onRetry: () => {},
+  onEdit: () => {},
+  onCreate: () => {},
+})
+assert.ok(
+  !flatten(usageOffTree).some((node) => node.props?.className === 'pm-usage-refresh'),
+  '「显示统计」关闭时不应有刷新按钮',
+)
 
 // 统计设置条位于页面最底部：在人格网格与底部说明之后。
 const flatUsage = flatten(usageTree)

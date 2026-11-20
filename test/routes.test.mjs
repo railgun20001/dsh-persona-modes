@@ -420,6 +420,43 @@ test('usage 在计数客户端抛错时返回空数据而不是 500', async () =
   }
 })
 
+test('usage 把请求体里的 refresh 布尔传给计数客户端', async () => {
+  const temp = tempStore()
+  try {
+    /** @type {Array<{ refresh: unknown } | undefined>} */
+    const settings = []
+    const handler = createRouteHandler(temp.store, {
+      version: '9.9.9',
+      usage: {
+        async read(_ids, options) {
+          settings.push(options)
+          return { counts: {}, at: 9, partial: false }
+        },
+      },
+    })
+    const plain = await invoke(handler, makeRequest({ action: 'usage', headers: SIGNED }))
+    assert.equal(plain.status, 200)
+    assert.notEqual(settings[0]?.refresh, true, '空请求体不应触发刷新')
+
+    const refreshed = await invoke(
+      handler,
+      makeRequest({ action: 'usage', headers: SIGNED, body: JSON.stringify({ refresh: true }) }),
+    )
+    assert.equal(refreshed.status, 200)
+    assert.equal(refreshed.body.fetchedAt, 9)
+    assert.equal(settings[1]?.refresh, true, 'refresh=true 应透传给计数客户端')
+
+    const ignored = await invoke(
+      handler,
+      makeRequest({ action: 'usage', headers: SIGNED, body: JSON.stringify({ refresh: 'yes' }) }),
+    )
+    assert.equal(ignored.status, 200)
+    assert.notEqual(settings[2]?.refresh, true, '非布尔 refresh 应被忽略')
+  } finally {
+    temp.cleanup()
+  }
+})
+
 test('usage/prefs 更新并持久化开关', async () => {
   const temp = tempStore()
   try {

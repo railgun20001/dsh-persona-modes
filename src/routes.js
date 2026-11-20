@@ -198,28 +198,36 @@ export function createRouteHandler(store, options = {}) {
     }
 
     if (action === 'usage') {
-      req.resume?.()
       const prefs = store.getUsage()
       if (prefs.fetch !== true || usage === null) {
+        req.resume?.()
         respond(res, 200, { ok: true, enabled: false, counts: {} })
         return
       }
-      // 只读内置人格：不把自定义 id 发出去，也不接受客户端指定 id 列表。
-      const ids = MODES.filter((mode) => mode.id !== 'off').map((mode) => mode.id)
-      Promise.resolve(usage.read(ids))
-        .then((result) => {
-          respond(res, 200, {
-            ok: true,
-            enabled: true,
-            counts: result?.counts ?? {},
-            fetchedAt: typeof result?.at === 'number' ? result.at : null,
-            ...(result?.partial === true ? { partial: true } : {}),
+      // 请求体只认一个可选的 refresh 布尔；不把客户端指定的 id 发出去，
+      // 永远只读内置人格。
+      void readJsonBody(req).then((parsed) => {
+        if (!parsed.ok) {
+          respond(res, parsed.reason === 'too-large' ? 413 : 400, { ok: false, error: parsed.reason })
+          return
+        }
+        const refresh = parsed.value?.refresh === true
+        const ids = MODES.filter((mode) => mode.id !== 'off').map((mode) => mode.id)
+        Promise.resolve(usage.read(ids, refresh ? { refresh: true } : {}))
+          .then((result) => {
+            respond(res, 200, {
+              ok: true,
+              enabled: true,
+              counts: result?.counts ?? {},
+              fetchedAt: typeof result?.at === 'number' ? result.at : null,
+              ...(result?.partial === true ? { partial: true } : {}),
+            })
           })
-        })
-        .catch(() => {
-          // 统计失败不是页面错误：回空数据，客户端静默隐藏角标。
-          respond(res, 200, { ok: true, enabled: true, counts: {}, fetchedAt: null })
-        })
+          .catch(() => {
+            // 统计失败不是页面错误：回空数据，客户端按整体失败提示处理。
+            respond(res, 200, { ok: true, enabled: true, counts: {}, fetchedAt: null })
+          })
+      })
       return
     }
 

@@ -12,9 +12,12 @@ import {
   isCountableId,
   USAGE_BASE_URL,
   USAGE_BREAKER_MS,
+  USAGE_BUCKET_CAPACITY,
+  USAGE_BUCKET_WINDOW_MS,
   USAGE_CACHE_MS,
   USAGE_MAX_BODY,
   USAGE_NAMESPACE,
+  USAGE_PARTIAL_CACHE_MS,
 } from '../src/usage.js'
 
 /**
@@ -162,7 +165,7 @@ test('enabled=false 时 record/read 完全不出网', async () => {
   assert.equal(fake.calls.length, 0)
 })
 
-test('read 汇总计数并缓存一小时', async () => {
+test('read 汇总计数并写长缓存', async () => {
   const time = clock()
   const fake = fakeFetch((url) => {
     if (url.endsWith('/catgirl')) return jsonResponse({ value: 12 })
@@ -182,6 +185,53 @@ test('read 汇总计数并缓存一小时', async () => {
   time.advance(USAGE_CACHE_MS + 1)
   await usage.read(['catgirl', 'mom'])
   assert.equal(fake.calls.length, 4)
+})
+
+test('refresh=true 跳过新鲜度检查，直接重新读取', async () => {
+  const time = clock()
+  let calls = 0
+  const fake = fakeFetch(() => {
+    calls += 1
+    return jsonResponse({ value: 7 })
+  })
+  const usage = createUsage({ fetch: fake.fetch, now: time.now, enabled: true })
+
+  await usage.read(['catgirl'])
+  assert.equal(calls, 1)
+
+  const cached = await usage.read(['catgirl'])
+  assert.equal(calls, 1, '无 refresh 时命中缓存')
+
+  const fresh = await usage.read(['catgirl'], { refresh: true })
+  assert.equal(calls, 2, 'refresh 应绕过缓存')
+  assert.deepEqual(fresh.counts, { catgirl: 7 })
+  assert.equal(fresh.partial, false)
+})
+
+test('人格多于桶容量时自动分批限速，而不是整批放弃', async () => {
+  const time = clock()
+  /** @type {number[]} */
+  const sleeps = []
+  const fake = fakeFetch(() => jsonResponse({ value: 1 }))
+  const usage = createUsage({
+    fetch: fake.fetch,
+    now: time.now,
+    enabled: true,
+    sleep: async (ms) => {
+      sleeps.push(ms)
+      time.advance(ms)
+    },
+  })
+  const ids = Array.from({ length: USAGE_BUCKET_CAPACITY + 5 }, (_, index) => `persona-${index}`)
+
+  const result = await usage.read(ids)
+  assert.notEqual(result, null)
+  assert.equal(result.partial, false)
+  assert.equal(fake.calls.length, ids.length)
+  // 20 个令牌先发前两批（10+10），剩下的 5 个按恢复速率等一次令牌再发：
+  // 恢复速率 = 窗口/容量 = 500 毫秒/个，等待应不少于 2500 毫秒。
+  assert.equal(sleeps.length, 1)
+  assert.ok(sleeps[0] >= 5 * (USAGE_BUCKET_WINDOW_MS / USAGE_BUCKET_CAPACITY), '批间等待应按恢复速率计算')
 })
 
 test('read 把 404 当作「还没有计数」跳过', async () => {
@@ -212,7 +262,7 @@ test('read 部分失败标 partial，结果按短 TTL 缓存', async () => {
   assert.equal(second.partial, true)
   assert.equal(calls, 2, '短 TTL 内应直接用缓存')
 
-  time.advance(10 * 60 * 1_000 + 1)
+  time.advance(USAGE_PARTIAL_CACHE_MS + 1)
   const third = await usage.read(['catgirl', 'mom'])
   assert.equal(calls, 4)
   assert.equal(third.partial, true)
@@ -280,7 +330,7 @@ test('read 撞上 429 时按一分钟退避并沿用缓存', async () => {
   assert.deepEqual(second.counts, { catgirl: 5 })
 
   // 退避结束、短缓存过期后重新拉取。
-  time.advance(10 * 60 * 1_000 + 1)
+  time.advance(USAGE_PARTIAL_CACHE_MS + 1)
   const third = await usage.read(['catgirl', 'mom'])
   assert.equal(calls, 4)
   assert.equal(third.partial, true)

@@ -75,8 +75,8 @@ window.__ModuleLoader__.load({
       usageReport: '参与统计',
       usageFetch: '显示统计',
       usageNote: '关闭「参与统计」后不再上报；关闭「显示统计」后不再获取或显示角标；已上报的聚合计数无法撤回。',
-      usageBadge: '{count} 轮对话',
-      usageBadgeTitle: '匿名统计：{count} 轮对话，仅供参考',
+      usageBadge: '热度 {count}',
+      usageBadgeTitle: '匿名统计：热度 {count}，仅供参考',
       usageCountMax: '99,999+',
       usageLoading: '正在读取统计…',
       usageUnavailable: '统计暂时不可用。',
@@ -141,8 +141,8 @@ window.__ModuleLoader__.load({
       usageReport: 'Contribute counts',
       usageFetch: 'Show counts',
       usageNote: 'Turning off “Contribute counts” stops reporting; turning off “Show counts” stops fetching and hides badges; counts already sent cannot be withdrawn.',
-      usageBadge: '{count} turns',
-      usageBadgeTitle: 'Anonymous stats: {count} turns, indicative only',
+      usageBadge: 'Heat {count}',
+      usageBadgeTitle: 'Anonymous stats: heat {count}, indicative only',
       usageCountMax: '99,999+',
       usageLoading: 'Loading stats…',
       usageUnavailable: 'Stats are temporarily unavailable.',
@@ -650,7 +650,12 @@ window.__ModuleLoader__.load({
       const removing = deletable && deleting === true
       return h(
         'div',
-        { className: 'pm-card-wrap', style: { '--pm-accent': mode.accent } },
+        {
+          className: 'pm-card-wrap',
+          style: { '--pm-accent': mode.accent },
+          // 自定义人格的右上角还有悬浮删除按钮，热度角标要给它让位。
+          ...(deletable ? { 'data-custom': 'true' } : {}),
+        },
         h(
           'button',
           {
@@ -678,19 +683,7 @@ window.__ModuleLoader__.load({
             h(
               'span',
               { className: 'pm-meta' },
-              h(
-                'span',
-                {},
-                chars === 0 ? t('charsZero') : t('chars', { count: chars }),
-              ),
-              countText === ''
-                ? null
-                : h(
-                    'span',
-                    { className: 'pm-count', title: t('usageBadgeTitle', { count: countText }) },
-                    ' · ',
-                    t('usageBadge', { count: countText }),
-                  ),
+              chars === 0 ? t('charsZero') : t('chars', { count: chars }),
             ),
           ),
           h('span', { className: 'pm-check', 'aria-hidden': 'true' }, '✓'),
@@ -710,6 +703,13 @@ window.__ModuleLoader__.load({
               h(TrashIcon),
             )
           : null,
+        countText === ''
+          ? null
+          : h(
+              'span',
+              { className: 'pm-heat', title: t('usageBadgeTitle', { count: countText }) },
+              t('usageBadge', { count: countText }),
+            ),
       )
     }
 
@@ -1340,7 +1340,8 @@ window.__ModuleLoader__.load({
       .pm-usage-status { color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
       .pm-usage-status-error { color:var(--dsw-alias-state-error-primary); }
       .pm-usage-note { margin:0; color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
-      .pm-count { color:var(--dsw-alias-label-tertiary); font-size:11px; }
+      .pm-heat { position:absolute; top:8px; right:8px; padding:1px 7px; border-radius:999px; background:#dc2626; color:#fff; font-size:10px; line-height:16px; font-weight:600; pointer-events:none; }
+      .pm-card-wrap[data-custom="true"] .pm-heat { right:36px; }
       .pm-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
       .pm-card-wrap { position:relative; display:flex; min-width:0; }
       .pm-card { display:flex; align-items:flex-start; gap:10px; width:100%; padding:12px; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-1); color:inherit; font:inherit; text-align:left; cursor:pointer; transition:background .15s ease,border-color .15s ease,box-shadow .15s ease; }

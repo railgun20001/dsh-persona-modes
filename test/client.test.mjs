@@ -549,7 +549,11 @@ const usageText = textOf(usageTree)
 assert.ok(usageText.includes('匿名统计'))
 assert.ok(usageText.includes('参与统计'))
 assert.ok(usageText.includes('显示统计'))
-assert.ok(usageText.includes('1,234 轮对话'))
+assert.ok(usageText.includes('热度 1,234'))
+assert.ok(
+  flatten(usageTree).some((node) => node.props?.className === 'pm-heat'),
+  '没有渲染右上角热度角标',
+)
 assert.ok(usageText.includes('已上报的聚合计数无法撤回'))
 
 const toggles = flatten(usageTree).filter((node) => node.props?.role === 'switch')
@@ -583,7 +587,7 @@ const smallTree = PersonaView({
   onEdit: () => {},
   onCreate: () => {},
 })
-assert.ok(textOf(smallTree).includes('1 轮对话'), '少量计数被隐藏了')
+assert.ok(textOf(smallTree).includes('热度 1'), '少量计数被隐藏了')
 
 // 页面不再渲染「可能被伪造」的提示文案；悬停 title 仍保留「仅供参考」。
 assert.ok(!usageText.includes('伪造'))

@@ -650,12 +650,7 @@ window.__ModuleLoader__.load({
       const removing = deletable && deleting === true
       return h(
         'div',
-        {
-          className: 'pm-card-wrap',
-          style: { '--pm-accent': mode.accent },
-          // 自定义人格的右上角还有悬浮删除按钮，热度角标要给它让位。
-          ...(deletable ? { 'data-custom': 'true' } : {}),
-        },
+        { className: 'pm-card-wrap', style: { '--pm-accent': mode.accent } },
         h(
           'button',
           {
@@ -1023,6 +1018,19 @@ window.__ModuleLoader__.load({
           try {
             const data = await postRoute('usage')
             if (cancelled) return
+            if (data?.enabled === false) {
+              // 开关在别处（比如另一个窗口）被关掉：跟随它，不再显示。
+              setCounts(null)
+              setCountsState('off')
+              return
+            }
+            if (typeof data?.fetchedAt !== 'number') {
+              // 第三方整体读取失败：角标隐藏，但在设置条上给出可见提示，
+              // 避免「什么都没有」被误读成「没人用过」。
+              setCounts(null)
+              setCountsState('error')
+              return
+            }
             setCounts(normalizeCounts(data, view.data.modes))
             setCountsState('ready')
           } catch {
@@ -1341,7 +1349,6 @@ window.__ModuleLoader__.load({
       .pm-usage-status-error { color:var(--dsw-alias-state-error-primary); }
       .pm-usage-note { margin:0; color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
       .pm-heat { position:absolute; top:8px; right:8px; padding:1px 7px; border-radius:999px; background:#dc2626; color:#fff; font-size:10px; line-height:16px; font-weight:600; pointer-events:none; }
-      .pm-card-wrap[data-custom="true"] .pm-heat { right:36px; }
       .pm-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
       .pm-card-wrap { position:relative; display:flex; min-width:0; }
       .pm-card { display:flex; align-items:flex-start; gap:10px; width:100%; padding:12px; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-1); color:inherit; font:inherit; text-align:left; cursor:pointer; transition:background .15s ease,border-color .15s ease,box-shadow .15s ease; }

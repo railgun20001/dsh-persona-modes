@@ -192,7 +192,7 @@ test('read 把 404 当作「还没有计数」跳过', async () => {
   assert.equal(result.partial, false)
 })
 
-test('read 部分失败时标 partial 且不写缓存', async () => {
+test('read 部分失败标 partial，结果按短 TTL 缓存', async () => {
   const time = clock()
   let calls = 0
   const fake = fakeFetch((url) => {
@@ -207,10 +207,15 @@ test('read 部分失败时标 partial 且不写缓存', async () => {
   assert.equal(first.partial, true)
   assert.equal(calls, 2)
 
-  time.advance(10_001)
   const second = await usage.read(['catgirl', 'mom'])
+  assert.deepEqual(second.counts, { catgirl: 5 })
   assert.equal(second.partial, true)
+  assert.equal(calls, 2, '短 TTL 内应直接用缓存')
+
+  time.advance(10 * 60 * 1_000 + 1)
+  const third = await usage.read(['catgirl', 'mom'])
   assert.equal(calls, 4)
+  assert.equal(third.partial, true)
 })
 
 test('read 全部失败时返回 null（无缓存）', async () => {
@@ -251,6 +256,34 @@ test('并发 read 共享同一次请求', async () => {
   assert.equal(fake.calls.length, 1)
   assert.deepEqual(left.counts, { catgirl: 9 })
   assert.deepEqual(right.counts, { catgirl: 9 })
+})
+
+test('read 撞上 429 时按一分钟退避并沿用缓存', async () => {
+  const time = clock()
+  let calls = 0
+  const fake = fakeFetch((url) => {
+    calls += 1
+    if (url.endsWith('/mom')) return jsonResponse({ error: 'rate limited' }, 429)
+    return jsonResponse({ value: 5 })
+  })
+  const usage = createUsage({ fetch: fake.fetch, now: time.now, enabled: true })
+
+  const first = await usage.read(['catgirl', 'mom'])
+  assert.deepEqual(first.counts, { catgirl: 5 })
+  assert.equal(first.partial, true)
+  assert.equal(calls, 2)
+  assert.equal(typeof usage.status().breakerOpenUntil, 'number', '429 应触发一分钟退避')
+
+  // 退避窗口内再读：命中短缓存，不再发请求。
+  const second = await usage.read(['catgirl', 'mom'])
+  assert.equal(calls, 2)
+  assert.deepEqual(second.counts, { catgirl: 5 })
+
+  // 退避结束、短缓存过期后重新拉取。
+  time.advance(10 * 60 * 1_000 + 1)
+  const third = await usage.read(['catgirl', 'mom'])
+  assert.equal(calls, 4)
+  assert.equal(third.partial, true)
 })
 
 test('未显式传 enabled 时，DSH_PERSONA_USAGE=off 生效', async () => {

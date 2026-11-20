@@ -27,6 +27,9 @@ export const USAGE_TIMEOUT_MS = 2_500
 /** 读取结果的缓存时长；避免每次打开设置页都打一轮请求。 */
 export const USAGE_CACHE_MS = 60 * 60 * 1_000
 
+/** 部分成功的读取只缓存一小会儿：下次打开设置页能尽快补齐失败的那几个键。 */
+export const USAGE_PARTIAL_CACHE_MS = 10 * 60 * 1_000
+
 /** 响应体上限；正常响应只有几十字节，超过即视为异常。 */
 export const USAGE_MAX_BODY = 64 * 1024
 
@@ -127,7 +130,7 @@ export function createUsage(options = {}) {
   let lastRefill = now()
   let failures = 0
   let openUntil = 0
-  /** @type {{ counts: Record<string, number>, at: number } | null} */
+  /** @type {{ counts: Record<string, number>, at: number, partial: boolean } | null} */
   let cache = null
   /** 同一时刻只允许一轮读取在飞，避免两个设置页同时打开时重复打第三方。 */
   let inflightRead = null
@@ -261,8 +264,8 @@ export function createUsage(options = {}) {
     if (wanted.length === 0) return { counts: {}, at: now(), partial: false }
 
     const startedAt = now()
-    if (cache !== null && startedAt - cache.at < USAGE_CACHE_MS) {
-      return { counts: { ...cache.counts }, at: cache.at, partial: false }
+    if (cache !== null && startedAt - cache.at < (cache.partial ? USAGE_PARTIAL_CACHE_MS : USAGE_CACHE_MS)) {
+      return { counts: { ...cache.counts }, at: cache.at, partial: cache.partial }
     }
     if (startedAt < openUntil) {
       return cache === null ? null : { counts: { ...cache.counts }, at: cache.at, partial: true }
@@ -277,6 +280,7 @@ export function createUsage(options = {}) {
       const counts = {}
       let ok = 0
       let failed = 0
+      let limited = false
 
       await Promise.all(wanted.map(async (id) => {
         try {
@@ -292,19 +296,24 @@ export function createUsage(options = {}) {
           if (!isCount(data?.value)) throw new Error('invalid-count')
           counts[id] = data.value
           ok += 1
-        } catch {
+        } catch (error) {
           failed += 1
+          // Abacus 限流是 30 次/10 秒/IP：两次快速打开设置页就会撞上。
+          // 撞上就退避一分钟，让窗口复位，而不是把失败当成数据。
+          if (error?.status === 429) limited = true
         }
       }))
 
       if (ok === 0) {
-        noteFailure(0)
+        noteFailure(limited ? 429 : 0)
         return cache === null ? null : { counts: { ...cache.counts }, at: cache.at, partial: true }
       }
 
-      failures = 0
+      if (limited) noteFailure(429)
+      else failures = 0
       const result = { counts, at: now(), partial: failed > 0 }
-      if (failed === 0) cache = { counts: { ...counts }, at: result.at }
+      // 部分成功也缓存，但 TTL 更短：角标能立刻显示，失败的那几个键下次尽快补齐。
+      cache = { counts: { ...counts }, at: result.at, partial: result.partial }
       return result
     })()
 

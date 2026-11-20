@@ -74,7 +74,6 @@ window.__ModuleLoader__.load({
       usageTitle: '匿名统计',
       usageReport: '参与统计',
       usageFetch: '显示统计',
-      usageHint: '按对话轮次计数，只上报当前人格 id；由第三方 Abacus 托管，数字可能被伪造，仅供参考。',
       usageNote: '关闭「参与统计」后不再上报；关闭「显示统计」后不再获取或显示角标；已上报的聚合计数无法撤回。',
       usageBadge: '{count} 轮对话',
       usageBadgeTitle: '匿名统计：{count} 轮对话，仅供参考',
@@ -141,8 +140,7 @@ window.__ModuleLoader__.load({
       usageTitle: 'Anonymous stats',
       usageReport: 'Contribute counts',
       usageFetch: 'Show counts',
-      usageHint: 'Counted per conversation turn; only the active persona id is sent. Hosted by Abacus (third party); numbers can be forged and are indicative only.',
-      usageNote: 'Turning off “Contribute counts” stops reporting; turning off “Show counts” stops fetching and hiding badges; counts already sent cannot be withdrawn.',
+      usageNote: 'Turning off “Contribute counts” stops reporting; turning off “Show counts” stops fetching and hides badges; counts already sent cannot be withdrawn.',
       usageBadge: '{count} turns',
       usageBadgeTitle: 'Anonymous stats: {count} turns, indicative only',
       usageCountMax: '99,999+',
@@ -565,10 +563,11 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 匿名统计设置条。
+     * 匿名统计设置条：位于设置页最底部。
      *
      * 两个开关互相独立：关掉「参与统计」只停止上报；关掉「显示统计」只停止读取与
-     * 展示。说明文字常驻，不依赖用户点开帮助。
+     * 展示。页内不写「数字可被伪造」之类的提示（README 与角标悬停仍保留"仅供参考"），
+     * 只留一句说明开关后果与"无法撤回"的注记。
      *
      * @param {object} props 组件属性。
      * @returns {object} React 元素。
@@ -581,13 +580,8 @@ window.__ModuleLoader__.load({
         { className: 'pm-usage' },
         h(
           'div',
-          { className: 'pm-usage-head' },
-          h('span', { className: 'pm-usage-title' }, t('usageTitle')),
-          h('span', { className: 'pm-usage-hint' }, t('usageHint')),
-        ),
-        h(
-          'div',
           { className: 'pm-usage-controls' },
+          h('span', { className: 'pm-usage-title' }, t('usageTitle')),
           h(Toggle, {
             label: t('usageReport'),
             checked: report,
@@ -897,14 +891,6 @@ window.__ModuleLoader__.load({
           pending: intensityPending === true,
           onChange: onIntensity,
         }),
-        h(UsageBar, {
-          t,
-          usage,
-          pending: usagePending === true,
-          error: usageError,
-          countsState,
-          onChange: onUsageChange,
-        }),
         editor
           ? h(PersonaEditor, {
               t,
@@ -960,6 +946,15 @@ window.__ModuleLoader__.load({
           { className: 'pm-foot' },
           h('p', { className: 'pm-note' }, t('note')),
         ),
+        // 匿名统计是低频的偏好设置，放在页面最底部，不与人格卡片抢注意力。
+        h(UsageBar, {
+          t,
+          usage,
+          pending: usagePending === true,
+          error: usageError,
+          countsState,
+          onChange: onUsageChange,
+        }),
       )
     }
 
@@ -1332,10 +1327,8 @@ window.__ModuleLoader__.load({
       .pm-segment-active { background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary); font-weight:600; }
       .pm-segment:disabled { opacity:.6; cursor:default; }
       .pm-intensity-hint { color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
-      .pm-usage { display:flex; flex-direction:column; gap:8px; padding:12px 14px; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-1); }
-      .pm-usage-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; }
-      .pm-usage-title { font-size:13px; line-height:20px; font-weight:600; }
-      .pm-usage-hint { flex:1 1 240px; color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
+      .pm-usage { display:flex; flex-direction:column; gap:6px; padding:10px 14px; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-1); }
+      .pm-usage-title { font-size:12px; line-height:18px; font-weight:600; }
       .pm-usage-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; }
       .pm-toggle { display:inline-flex; align-items:center; gap:6px; padding:3px 10px 3px 3px; border:1px solid var(--dsw-alias-border-l2); border-radius:999px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-secondary); font:inherit; font-size:12px; cursor:pointer; }
       .pm-toggle-on { border-color:color-mix(in srgb,var(--dsw-alias-label-primary) 35%,transparent); color:var(--dsw-alias-label-primary); }

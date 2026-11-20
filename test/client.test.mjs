@@ -559,6 +559,36 @@ assert.deepEqual(usagePatch, { report: false })
 toggles[1].props.onClick()
 assert.deepEqual(usagePatch, { fetch: false })
 
+// 统计设置条位于页面最底部：在人格网格与底部说明之后。
+const flatUsage = flatten(usageTree)
+const gridIndex = flatUsage.findIndex((node) => node.props?.className === 'pm-grid')
+const footIndex = flatUsage.findIndex((node) => node.props?.className === 'pm-foot')
+const usageIndex = flatUsage.findIndex((node) => node.props?.className === 'pm-usage')
+assert.ok(gridIndex >= 0, '没有渲染人格网格')
+assert.ok(footIndex >= 0, '没有渲染底部说明区')
+assert.ok(usageIndex > gridIndex && usageIndex > footIndex, '统计设置条没有排在页面底部')
+
+// 角标不做「少量隐藏」：1 轮也照常显示。
+const smallTree = PersonaView({
+  t,
+  localeId: 'zh',
+  data,
+  pendingId: null,
+  error: null,
+  usage: { report: true, fetch: true },
+  counts: { catgirl: 1 },
+  countsState: 'ready',
+  onSelect: () => {},
+  onRetry: () => {},
+  onEdit: () => {},
+  onCreate: () => {},
+})
+assert.ok(textOf(smallTree).includes('1 轮对话'), '少量计数被隐藏了')
+
+// 页面不再渲染「可能被伪造」的提示文案；悬停 title 仍保留「仅供参考」。
+assert.ok(!usageText.includes('伪造'))
+assert.ok(!usageText.includes('Abacus'))
+
 assert.deepEqual(
   normalizePayload({ ...data, usage: { report: false } }).usage,
   { report: false, fetch: true },

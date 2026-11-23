@@ -6,6 +6,8 @@
  *   需要长期保存的数据；落盘还会引入「日志文件写坏 / 泄露路径」这类新问题。
  * - **有上限**：环形缓冲，超过 `LOG_LIMIT` 就丢最旧的，并记下丢弃条数。统计失败
  *   可能每轮对话都发生，没有上限会无限吃内存。
+ * - **同一错误合并**：同一条消息在 `LOG_COALESCE_MS` 内重复出现，只占一条并累加
+ *   `repeat`（面板显示 ×N），避免一次批量失败把缓冲填满。
  * - **默认只记错误**：`debug` 关闭时只收错误；打开后额外收「成功/流程」这类
  *   细节记录（`note`），以及错误堆栈。开关由 `state.json` 里的 `debug` 决定，
  *   在插件详情页切换。
@@ -17,6 +19,9 @@
 
 /** 环形缓冲容量：足以看清一次故障的来龙去脉，又不至于占太多内存。 */
 export const LOG_LIMIT = 50
+
+/** 同一条错误在这个窗口内重复出现时合并成一条并计数（毫秒）。 */
+export const LOG_COALESCE_MS = 60 * 1_000
 
 /** 单条消息的字符上限。 */
 const MESSAGE_MAX = 240
@@ -156,13 +161,31 @@ export function createErrorLog(options = {}) {
    */
   function push(level, scope, message, detail, stack) {
     if (level === 'info' && !debug) return null
+    const time = now()
+    const cleanScope = clampText(scrubUrls(scope), 40)
+    const cleanMessage = clampText(scrubUrls(message), MESSAGE_MAX)
+    const last = entries[entries.length - 1]
+    // 同一条错误在短时间内反复发生（比如每轮对话都超时）只占一个格子，
+    // 改用 ×N 计数：排查要看的是「同一个毛病反复出现」，不是 50 条一模一样的行。
+    if (
+      last !== undefined
+      && last.level === level
+      && last.scope === cleanScope
+      && last.message === cleanMessage
+      && (last.detail ?? '') === (detail ?? '')
+      && time - last.at <= LOG_COALESCE_MS
+    ) {
+      last.at = time
+      last.repeat = (last.repeat ?? 1) + 1
+      return last
+    }
     seq += 1
     const entry = {
       seq,
-      at: now(),
+      at: time,
       level,
-      scope: clampText(scrubUrls(scope), 40),
-      message: clampText(scrubUrls(message), MESSAGE_MAX),
+      scope: cleanScope,
+      message: cleanMessage,
       ...(detail === undefined ? {} : { detail }),
       // 堆栈只在 debug 打开时附带：默认模式下日志要短到能一眼看完。
       ...(debug && stack !== undefined ? { stack } : {}),
@@ -187,9 +210,14 @@ export function createErrorLog(options = {}) {
      */
     record(scope, error, detail) {
       const info = describeError(error)
-      const statusText = info.status === undefined ? undefined : `status=${info.status}`
-      const merged = [statusText, describeDetail(detail)].filter((part) => part !== undefined).join(' ')
-      return push('error', scope, info.message, merged === '' ? info.code : `${info.code} · ${merged}`, info.stack)
+      const parts = []
+      if (info.status !== undefined) parts.push(`status=${info.status}`)
+      const extra = describeDetail(detail)
+      if (extra !== undefined) parts.push(extra)
+      // 字符串错误没有独立错误码，别把同一句话在 detail 里再抄一遍。
+      const prefix = typeof error === 'string' ? undefined : info.code
+      const detailText = [prefix, ...parts].filter((part) => part !== undefined && part !== '').join(' · ')
+      return push('error', scope, info.message, detailText === '' ? undefined : detailText, info.stack)
     },
 
     /**

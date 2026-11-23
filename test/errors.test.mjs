@@ -7,7 +7,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createErrorLog, describeError, LOG_LIMIT } from '../src/errors.js'
+import { createErrorLog, describeError, LOG_COALESCE_MS, LOG_LIMIT } from '../src/errors.js'
 
 /**
  * 造一个可拨动的时钟。
@@ -76,6 +76,30 @@ test('堆栈只在 debug 打开时附带', () => {
   const entry = loud.record('x', new Error('boom'))
   assert.equal(typeof entry.stack, 'string')
   assert.match(entry.stack, /boom/u)
+})
+
+test('同一条错误在窗口内合并成一条并累计 repeat', () => {
+  const time = clock()
+  const log = createErrorLog({ now: time.now })
+  log.record('usage.record', new Error('timeout'), { id: 'whale' })
+  time.advance(1_000)
+  log.record('usage.record', new Error('timeout'), { id: 'whale' })
+  time.advance(1_000)
+  const merged = log.record('usage.record', new Error('timeout'), { id: 'whale' })
+
+  const list = log.list()
+  assert.equal(list.entries.length, 1, '三条同样的错误只占一格')
+  assert.equal(list.entries[0].repeat, 3)
+  assert.equal(merged.at, list.entries[0].at, '时间戳刷新到最近一次')
+
+  // 细节不同 → 新的一条。
+  log.record('usage.record', new Error('timeout'), { id: 'catgirl' })
+  assert.equal(log.list().entries.length, 2)
+
+  // 超出合并窗口 → 新的一条。
+  time.advance(LOG_COALESCE_MS + 1)
+  log.record('usage.record', new Error('timeout'), { id: 'catgirl' })
+  assert.equal(log.list().entries.length, 3)
 })
 
 test('clear 清空并返回条数', () => {

@@ -335,6 +335,8 @@ window.__ModuleLoader__.load({
           scope: typeof entry.scope === 'string' ? entry.scope.slice(0, 40) : 'unknown',
           message: typeof entry.message === 'string' ? entry.message.slice(0, 240) : '',
           detail: typeof entry.detail === 'string' ? entry.detail.slice(0, 300) : '',
+          // 宿主会把窗口内重复的同一错误合并计数，这里原样展示 ×N。
+          repeat: Number.isSafeInteger(entry.repeat) && entry.repeat > 1 ? entry.repeat : 1,
         })
       }
       const dropped = Number.isSafeInteger(source.dropped) && source.dropped > 0 ? source.dropped : 0
@@ -820,6 +822,7 @@ window.__ModuleLoader__.load({
                         className: entry.level === 'info' ? 'pm-logs-row pm-logs-row-info' : 'pm-logs-row',
                       },
                       h('span', { className: 'pm-logs-time' }, formatTime(entry.at)),
+                      entry.repeat > 1 ? h('span', { className: 'pm-logs-repeat' }, `×${entry.repeat}`) : null,
                       h('span', { className: 'pm-logs-scope' }, entry.scope),
                       h('span', { className: 'pm-logs-message' }, entry.message),
                       entry.detail === '' ? null : h('span', { className: 'pm-logs-detail' }, entry.detail),
@@ -1845,6 +1848,7 @@ window.__ModuleLoader__.load({
       .pm-logs-row { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; padding:4px 8px; border-radius:8px; background:var(--dsw-alias-bg-layer-2); font-size:11px; line-height:16px; }
       .pm-logs-row-info { opacity:.75; }
       .pm-logs-time { flex:0 0 auto; color:var(--dsw-alias-label-tertiary); font-variant-numeric:tabular-nums; }
+      .pm-logs-repeat { flex:0 0 auto; color:var(--dsw-alias-label-secondary); font-variant-numeric:tabular-nums; }
       .pm-logs-scope { flex:0 0 auto; color:var(--dsw-alias-label-secondary); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
       .pm-logs-message { flex:1 1 160px; color:var(--dsw-alias-label-primary); word-break:break-word; }
       .pm-logs-detail { flex:1 1 100%; color:var(--dsw-alias-label-tertiary); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; word-break:break-all; }

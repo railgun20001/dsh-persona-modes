@@ -21,8 +21,14 @@ export const USAGE_BASE_URL = 'https://abacus.jasoncameron.dev'
 /** 计数命名空间；与 npm 包名一致，便于辨认归属。 */
 export const USAGE_NAMESPACE = 'dsh-persona-modes'
 
-/** 单次网络请求超时；统计慢不能拖住设置页。 */
-export const USAGE_TIMEOUT_MS = 2_500
+/**
+ * 单次网络请求超时。
+ *
+ * 走代理或经代理客户端隧道时，首个请求的握手常在 1–2 秒，2.5 秒会误伤一部分
+ * 本来能成功的请求（实测 15 个键里 13 个成功、2 个因 2.5 秒超时失败）；4 秒仍
+ * 短到不会拖住设置页——读取是并发的，最坏也就多等 4 秒。
+ */
+export const USAGE_TIMEOUT_MS = 4_000
 
 /** 读取结果的缓存时长：打开设置页默认只读缓存，过期或点「刷新」才再请求第三方。 */
 export const USAGE_CACHE_MS = 24 * 60 * 60 * 1_000
@@ -56,6 +62,12 @@ export const USAGE_BREAKER_MS = 60 * 1_000
 
 /** 单个人格显示上限；超过后前端显示为「99,999+」。 */
 export const USAGE_MAX_COUNT = 99_999
+
+/** 统计端点的主机名；日志里只写主机，不带完整 URL。 */
+export const USAGE_HOST = 'abacus.jasoncameron.dev'
+
+/** 宿主侧可能与代理有关的进程环境变量名（只检查是否存在，从不读取值）。 */
+const PROXY_ENV_NAMES = ['https_proxy', 'HTTPS_PROXY', 'http_proxy', 'HTTP_PROXY', 'all_proxy', 'ALL_PROXY']
 
 /** 合法的人格 id：只接受小写字母、数字与连字符。 */
 const ID_PATTERN = /^[a-z][a-z0-9-]{2,31}$/u
@@ -279,6 +291,51 @@ export function createUsage(options = {}) {
   }
 
   /**
+   * 把一次读取里的失败汇总成尽量少的日志条目。
+   *
+   * 15 个键同时超时会一次产出 15 条一模一样的记录，把 50 条的上限瞬间吃掉；
+   * 这里按「一个键失败就记细节，多个键失败就记一条汇总 + 样本 id」处理，
+   * 并在全部超时时补一句排查方向（宿主没走系统代理是最常见的成因）。
+   *
+   * @param {Array<{ id: string, error: unknown }>} list 失败明细。
+   * @param {number} ok 成功的条数。
+   */
+  function reportReadFailures(list, ok) {
+    if (list.length === 0) return
+    if (list.length === 1) {
+      report('usage.read', list[0].error, { id: list[0].id, host: USAGE_HOST })
+      return
+    }
+    const codes = [...new Set(list.map((item) => {
+      const error = item.error
+      if (error !== null && typeof error === 'object') {
+        const named = /** @type {Record<string, unknown>} */ (error)
+        if (typeof named.name === 'string' && named.name !== '') return named.name
+        if (typeof named.code === 'string' && named.code !== '') return named.code
+      }
+      return 'error'
+    }))]
+    const sample = list.slice(0, 3).map((item) => item.id).join(',')
+    const allTimeout = codes.every((code) => code === 'TimeoutError' || code === 'AbortError')
+    const message = allTimeout
+      ? `${list.length} 个人格数据读取超时，宿主多半没走代理`
+      : `${list.length} 个人格数据读取失败（${codes.join('/')}）`
+    // 只报告「有没有配代理」，不读代理的具体值：日志不该带凭据。
+    const proxyConfigured = typeof process !== 'undefined'
+      && process.env !== undefined
+      && PROXY_ENV_NAMES.some((name) => typeof process.env[name] === 'string' && process.env[name] !== '')
+    report('usage.read', message, {
+      failed: list.length,
+      ok,
+      sample,
+      host: USAGE_HOST,
+      ...(allTimeout
+        ? { hint: proxyConfigured ? '已配置代理仍超时，检查代理端口' : '未配置 https_proxy，重启 DSH 后生效' }
+        : {}),
+    })
+  }
+
+  /**
    * 给一个人格记一轮对话。
    *
    * 这是 fire-and-forget 语义：失败返回 false，不抛错。调用方不需要 await。
@@ -344,6 +401,8 @@ export function createUsage(options = {}) {
       let ok = 0
       let failed = 0
       let limited = false
+      /** @type {Array<{ id: string, error: unknown }>} */
+      const failuresList = []
 
       const fetchOne = async (id) => {
         try {
@@ -361,8 +420,7 @@ export function createUsage(options = {}) {
           ok += 1
         } catch (error) {
           failed += 1
-          // 逐个键记录：整批失败时能看出是全部超时还是个别键异常。
-          report('usage.read', error, { id })
+          failuresList.push({ id, error })
           // Abacus 限流是 30 次/10 秒/IP：两次快速打开设置页就会撞上。
           // 撞上就退避一分钟，让窗口复位，而不是把失败当成数据。
           if (error?.status === 429) limited = true
@@ -392,10 +450,11 @@ export function createUsage(options = {}) {
 
       if (ok === 0) {
         noteFailure(limited ? 429 : 0)
-        report('usage.read', 'all-requests-failed', { ids: wanted.length, failed })
+        reportReadFailures(failuresList, 0)
         return cache === null ? null : { counts: { ...cache.counts }, at: cache.at, partial: true }
       }
 
+      if (failed > 0) reportReadFailures(failuresList, ok)
       if (limited) noteFailure(429)
       else failures = 0
       const result = { counts, at: now(), partial: failed > 0 }

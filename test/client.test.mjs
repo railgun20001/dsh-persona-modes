@@ -690,7 +690,7 @@ const logPayload = {
   limit: 50,
   dropped: 2,
   entries: [
-    { at: new Date(2026, 10, 23, 15, 4, 5).getTime(), level: 'error', scope: 'usage.read', message: 'fetch failed', detail: 'id=catgirl' },
+    { at: new Date(2026, 10, 23, 15, 4, 5).getTime(), level: 'error', scope: 'usage.read', message: 'fetch failed', detail: 'id=catgirl', repeat: 4 },
     { at: new Date(2026, 10, 23, 15, 4, 9).getTime(), level: 'error', scope: 'route.usage', message: 'all-requests-failed' },
     { at: 1, level: 'weird', scope: 42, message: null },
     null,
@@ -701,6 +701,8 @@ assert.equal(normalizedLogs.limit, 50)
 assert.equal(normalizedLogs.dropped, 2)
 assert.equal(normalizedLogs.entries.length, 3, '坏条目被丢弃')
 assert.equal(normalizedLogs.entries[0].scope, 'usage.read')
+assert.equal(normalizedLogs.entries[0].repeat, 4, '合并计数应保留')
+assert.equal(normalizedLogs.entries[1].repeat, 1)
 assert.equal(normalizedLogs.entries[1].level, 'error')
 assert.equal(formatTime(new Date(2026, 10, 23, 15, 4, 5).getTime()), '15:04:05')
 
@@ -747,6 +749,7 @@ assert.ok(expandedText.includes('id=catgirl'))
 assert.ok(expandedText.includes('15:04:05'))
 assert.ok(expandedText.includes('最近 50 条'))
 assert.ok(expandedText.includes('更早的 2 条已丢弃'))
+assert.ok(expandedText.includes('×4'), '合并计数应显示为 ×N')
 
 // 空日志：显示「暂无错误记录」。
 const empty = RunErrors({

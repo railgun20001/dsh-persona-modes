@@ -157,6 +157,7 @@ export function buildStatePayload(store, version) {
     active: view.active,
     intensity: view.intensity,
     usage: store.getUsage(),
+    debug: store.getDebug(),
     policy: view.policy,
     runtime: view.runtime,
     modes: view.modes,
@@ -172,6 +173,9 @@ export function buildStatePayload(store, version) {
  * - `POST /dsh-persona-modes/state`：读取当前模式、全部模式与自定义模板；
  * - `POST /dsh-persona-modes/usage`：读取各人格累计对话轮次（仅当「显示统计」开启）；
  * - `POST /dsh-persona-modes/usage/prefs`：更新统计开关，body `{ "report"?: boolean, "fetch"?: boolean }`；
+ * - `POST /dsh-persona-modes/logs`：读取运行错误日志（内存、有上限、不落盘）；
+ * - `POST /dsh-persona-modes/logs/clear`：清空运行错误日志；
+ * - `POST /dsh-persona-modes/logs/debug`：设置 debug 开关，body `{ "value": boolean }`；
  * - `POST /dsh-persona-modes/select`：切换模式，body `{ "id": "catgirl" }`；
  * - `POST /dsh-persona-modes/intensity`：切换全局语气强度，body `{ "value": "low|medium|high" }`；
  * - `POST /dsh-persona-modes/save`：保存称呼/自称/提示词，带 `id` 改已有模式，不带 `id` 新建自定义；
@@ -180,12 +184,41 @@ export function buildStatePayload(store, version) {
  * - `POST /dsh-persona-modes/debug`：只读诊断，返回本插件在组装结果里的段/上下文字数。
  *
  * @param {object} store 模式存储。
- * @param {{ version?: string, diagnostics?: () => Promise<object>, usage?: object }} [options] 版本信息、诊断回调与计数客户端。
+ * @param {{ version?: string, diagnostics?: () => Promise<object>, usage?: object, errors?: object }} [options]
+ *   版本信息、诊断回调、计数客户端与运行错误日志。
  * @returns {(req: object, res: object) => void} node:http 处理器。
  */
 export function createRouteHandler(store, options = {}) {
   const version = typeof options.version === 'string' && options.version !== '' ? options.version : 'unknown'
   const usage = options.usage ?? null
+  const errors = options.errors ?? null
+
+  /**
+   * 记一条宿主侧失败；错误日志自身异常也不能影响响应。
+   *
+   * @param {string} scope 来源。
+   * @param {unknown} error 错误值。
+   * @param {unknown} [detail] 补充信息。
+   */
+  function fail(scope, error, detail) {
+    try {
+      errors?.record?.(scope, error, detail)
+    } catch {
+      /* 日志只是辅助 */
+    }
+  }
+
+  /**
+   * 请求体解析失败时统一回错误码，并留下日志。
+   *
+   * @param {object} res 响应。
+   * @param {string} action 动作名。
+   * @param {{ ok: false, reason: string }} parsed 解析结果。
+   */
+  function rejectBody(res, action, parsed) {
+    fail(`route.${action}`, parsed.reason, { stage: 'body' })
+    respond(res, parsed.reason === 'too-large' ? 413 : 400, { ok: false, error: parsed.reason })
+  }
 
   return (req, res) => {
     const url = typeof req.url === 'string' ? req.url : ''
@@ -201,6 +234,53 @@ export function createRouteHandler(store, options = {}) {
     if (!hasRouteHeader(req)) {
       req.resume?.()
       respond(res, 403, { ok: false, error: 'forbidden' })
+      return
+    }
+
+    if (action === 'logs') {
+      req.resume?.()
+      const snapshot = errors === null ? null : errors.list()
+      respond(res, 200, {
+        ok: true,
+        debug: store.getDebug(),
+        limit: snapshot?.limit ?? 0,
+        dropped: snapshot?.dropped ?? 0,
+        entries: snapshot?.entries ?? [],
+      })
+      return
+    }
+
+    if (action === 'logs/clear') {
+      req.resume?.()
+      const removed = errors === null ? 0 : errors.clear()
+      const snapshot = errors === null ? null : errors.list()
+      respond(res, 200, {
+        ok: true,
+        removed,
+        debug: store.getDebug(),
+        limit: snapshot?.limit ?? 0,
+        dropped: 0,
+        entries: snapshot?.entries ?? [],
+      })
+      return
+    }
+
+    if (action === 'logs/debug') {
+      void readJsonBody(req).then((parsed) => {
+        if (!parsed.ok) {
+          rejectBody(res, 'logs/debug', parsed)
+          return
+        }
+        const result = store.setDebug(parsed.value?.value)
+        if (result === null) {
+          fail('route.logs/debug', 'invalid-input', { stage: 'validate' })
+          respond(res, 400, { ok: false, error: 'invalid-input' })
+          return
+        }
+        // 开关立即反映到日志：关闭时同时丢掉已累积的 info 级记录。
+        if (errors !== null && typeof errors.setDebug === 'function') errors.setDebug(result.debug)
+        respond(res, 200, { ok: true, debug: result.debug, ...(result.persisted ? {} : { persisted: false }) })
+      })
       return
     }
 
@@ -227,7 +307,7 @@ export function createRouteHandler(store, options = {}) {
       // 永远只读内置人格。
       void readJsonBody(req).then((parsed) => {
         if (!parsed.ok) {
-          respond(res, parsed.reason === 'too-large' ? 413 : 400, { ok: false, error: parsed.reason })
+          rejectBody(res, action, parsed)
           return
         }
         const refresh = parsed.value?.refresh === true
@@ -243,8 +323,9 @@ export function createRouteHandler(store, options = {}) {
               ...buildRetryHint(usage, result),
             })
           })
-          .catch(() => {
-            // 统计失败不是页面错误：回空数据，客户端按整体失败提示处理。
+          .catch((error) => {
+            // 统计失败不是页面错误：回空数据给客户端提示；同时留下日志，不再静默。
+            fail('route.usage', error, { stage: 'read' })
             respond(res, 200, { ok: true, enabled: true, counts: {}, fetchedAt: null, ...buildRetryHint(usage, null) })
           })
       })
@@ -254,13 +335,14 @@ export function createRouteHandler(store, options = {}) {
     if (action === 'usage/prefs') {
       void readJsonBody(req).then((parsed) => {
         if (!parsed.ok) {
-          respond(res, parsed.reason === 'too-large' ? 413 : 400, { ok: false, error: parsed.reason })
+          rejectBody(res, action, parsed)
           return
         }
         const keys = Object.keys(parsed.value)
         const valid = keys.length > 0 && keys.every((key) => key === 'report' || key === 'fetch')
         const result = valid ? store.setUsagePrefs(parsed.value) : null
         if (result === null) {
+          fail('route.usage/prefs', 'invalid-input', { stage: 'validate' })
           respond(res, 400, { ok: false, error: 'invalid-input' })
           return
         }
@@ -277,18 +359,22 @@ export function createRouteHandler(store, options = {}) {
       req.resume?.()
       Promise.resolve(options.diagnostics?.())
         .then((data) => respond(res, 200, { ok: true, ...(data ?? {}) }))
-        .catch(() => respond(res, 500, { ok: false, error: 'diagnostics-failed' }))
+        .catch((error) => {
+          fail('route.debug', error, { stage: 'diagnostics' })
+          respond(res, 500, { ok: false, error: 'diagnostics-failed' })
+        })
       return
     }
 
     if (action === 'select') {
       void readJsonBody(req).then((parsed) => {
         if (!parsed.ok) {
-          respond(res, parsed.reason === 'too-large' ? 413 : 400, { ok: false, error: parsed.reason })
+          rejectBody(res, action, parsed)
           return
         }
         const result = store.setActive(parsed.value.id)
         if (result === null) {
+          fail('route.select', 'unknown-mode', { stage: 'validate' })
           respond(res, 400, { ok: false, error: 'unknown-mode' })
           return
         }
@@ -304,7 +390,7 @@ export function createRouteHandler(store, options = {}) {
     if (action === 'intensity') {
       void readJsonBody(req).then((parsed) => {
         if (!parsed.ok) {
-          respond(res, parsed.reason === 'too-large' ? 413 : 400, { ok: false, error: parsed.reason })
+          rejectBody(res, action, parsed)
           return
         }
         const result = store.setIntensity(parsed.value.value)
@@ -320,11 +406,12 @@ export function createRouteHandler(store, options = {}) {
     if (action === 'save') {
       void readJsonBody(req).then((parsed) => {
         if (!parsed.ok) {
-          respond(res, parsed.reason === 'too-large' ? 413 : 400, { ok: false, error: parsed.reason })
+          rejectBody(res, action, parsed)
           return
         }
         const result = store.savePersona(parsed.value)
         if (result === null) {
+          fail('route.save', 'invalid-input', { stage: 'validate' })
           respond(res, 400, { ok: false, error: 'invalid-input' })
           return
         }
@@ -341,11 +428,12 @@ export function createRouteHandler(store, options = {}) {
     if (action === 'reset') {
       void readJsonBody(req).then((parsed) => {
         if (!parsed.ok) {
-          respond(res, parsed.reason === 'too-large' ? 413 : 400, { ok: false, error: parsed.reason })
+          rejectBody(res, action, parsed)
           return
         }
         const result = store.resetPersona(parsed.value.id)
         if (result === null) {
+          fail('route.reset', 'unknown-mode', { stage: 'validate' })
           respond(res, 400, { ok: false, error: 'unknown-mode' })
           return
         }
@@ -361,11 +449,12 @@ export function createRouteHandler(store, options = {}) {
     if (action === 'delete') {
       void readJsonBody(req).then((parsed) => {
         if (!parsed.ok) {
-          respond(res, parsed.reason === 'too-large' ? 413 : 400, { ok: false, error: parsed.reason })
+          rejectBody(res, action, parsed)
           return
         }
         const result = store.deletePersona(parsed.value.id)
         if (result === null) {
+          fail('route.delete', 'not-custom', { stage: 'validate' })
           respond(res, 400, { ok: false, error: 'not-custom' })
           return
         }

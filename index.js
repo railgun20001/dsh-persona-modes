@@ -35,6 +35,7 @@ import {
   POLICY_SECTION_ORDER,
   renderPersonaPrompt,
 } from './src/modes.js'
+import { createErrorLog } from './src/errors.js'
 import { createRouteHandler, PLUGIN_ID, ROUTE_PATH } from './src/routes.js'
 import { createStore } from './src/store.js'
 import { createUsage } from './src/usage.js'
@@ -88,14 +89,21 @@ export function commandHelp(activeId, state = {}) {
  * @param {{ defaultMode?: string, command?: boolean, stateFile?: string }} [config] 插件行配置。
  */
 export function apply(ctx, config = {}) {
+  // 运行错误日志：只在内存、有上限、不落盘。默认只收错误；`state.debug` 打开后
+  // 额外收流程细节。设置页底部可以查看，插件详情页可以切开关。
+  const errors = createErrorLog()
+
   const store = createStore({
     file: typeof config.stateFile === 'string' && config.stateFile !== '' ? config.stateFile : undefined,
     defaultMode: normalizeModeId(config.defaultMode),
+    journal: errors,
   })
+  // 状态里持久化的 debug 开关要在启动时同步到日志。
+  errors.setDebug(store.getDebug())
 
-  // 匿名计数客户端：只上报人格 id，失败静默；是否参与由 store 里的开关决定。
-  // User-Agent 不带版本号，尽量少暴露可关联信息。
-  const usage = createUsage({ userAgent: PLUGIN_ID })
+  // 匿名计数客户端：只上报人格 id，失败会写进运行日志（不再静默）；是否参与由
+  // store 里的开关决定。User-Agent 不带版本号，尽量少暴露可关联信息。
+  const usage = createUsage({ userAgent: PLUGIN_ID, journal: errors })
 
   /**
    * 按「对话轮次」记一次使用。
@@ -119,8 +127,13 @@ export function apply(ctx, config = {}) {
         // 只统计内置人格：off 与 custom-* 一律不上报。
         if (active === 'off' || !MODES.some((mode) => mode.id === active)) return
         void usage.record(active)
-      } catch {
-        /* 统计失败绝不能打断本轮对话 */
+      } catch (error) {
+        // 统计失败绝不能打断本轮对话，但也不能静默：写进运行日志。
+        try {
+          errors.record('listener.turn', error)
+        } catch {
+          /* 日志自身出错也不影响对话 */
+        }
       }
     })
   }
@@ -140,11 +153,11 @@ export function apply(ctx, config = {}) {
       () => scoped.webServer.register({
         kind: 'prefix',
         path: ROUTE_PATH,
-        handler: createRouteHandler(store, { version: VERSION, diagnostics: () => diagnostics?.(), usage }),
+        handler: createRouteHandler(store, { version: VERSION, diagnostics: () => diagnostics?.(), usage, errors }),
       }),
       'persona-modes: routes',
     )
-    scoped.logger?.info?.(`[${PLUGIN_ID}] 宿主半 v${VERSION}：路由 ${ROUTE_PATH}（ping/state/select/debug）已挂载`)
+    scoped.logger?.info?.(`[${PLUGIN_ID}] 宿主半 v${VERSION}：路由 ${ROUTE_PATH}（ping/state/select/logs/debug）已挂载`)
   })
 
   // 核心：一条稳定的语气策略段 + 一条动态运行时上下文。
@@ -241,6 +254,7 @@ export const __test = {
   commandHelp,
   createRouteHandler,
   createStore,
+  createErrorLog,
   renderPersonaPrompt,
 }
 

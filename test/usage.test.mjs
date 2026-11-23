@@ -351,8 +351,49 @@ test('未显式传 enabled 时，DSH_PERSONA_USAGE=off 生效', async () => {
   }
 })
 
-test('status 暴露缓存与熔断状态', async () => {
+test('失败的读取与上报都写进运行日志，不再静默', async () => {
+  const time = clock()
+  const journal = { records: [], notes: [], record(scope, error, detail) { this.records.push({ scope, error, detail }) }, note(scope, message, detail) { this.notes.push({ scope, message, detail }) } }
+  const fake = fakeFetch((url) => {
+    if (url.includes('/hit/')) return jsonResponse({ error: 'offline' }, 500)
+    if (url.endsWith('/mom')) return jsonResponse({ error: 'boom' }, 500)
+    return jsonResponse({ value: 3 })
+  })
+  const usage = createUsage({ fetch: fake.fetch, now: time.now, enabled: true, journal })
+
+  assert.equal(await usage.record('catgirl'), false)
+  assert.equal(journal.records.length, 1)
+  assert.equal(journal.records[0].scope, 'usage.record')
+  assert.equal(journal.records[0].detail.id, 'catgirl')
+
+  const result = await usage.read(['catgirl', 'mom'])
+  assert.deepEqual(result.counts, { catgirl: 3 })
+  assert.equal(result.partial, true)
+  const readFailures = journal.records.filter((entry) => entry.scope === 'usage.read')
+  assert.equal(readFailures.length, 1)
+  assert.equal(readFailures[0].detail.id, 'mom')
+
+  // 成功路径只在 debug 打开时留下 note。
+  assert.ok(journal.notes.some((entry) => entry.scope === 'usage.read'))
+})
+
+test('日志对象自己抛错也不影响计数', async () => {
+  const journal = {
+    record() {
+      throw new Error('journal-down')
+    },
+    note() {
+      throw new Error('journal-down')
+    },
+  }
   const fake = fakeFetch(() => jsonResponse({ value: 1 }))
+  const usage = createUsage({ fetch: fake.fetch, enabled: true, journal })
+  const result = await usage.read(['catgirl'])
+  assert.deepEqual(result.counts, { catgirl: 1 })
+  assert.equal(await usage.record('catgirl'), true)
+})
+
+test('status 暴露缓存与熔断状态', async () => {  const fake = fakeFetch(() => jsonResponse({ value: 1 }))
   const usage = createUsage({ fetch: fake.fetch, enabled: true })
   assert.deepEqual(usage.status(), { enabled: true, cachedAt: null, breakerOpenUntil: null })
   await usage.read(['catgirl'])

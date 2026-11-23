@@ -118,7 +118,9 @@ function timeoutSignal(ms) {
  *   enabled?: boolean,
  *   userAgent?: string,
  *   sleep?: (ms: number) => Promise<void>,
+ *   journal?: { record: (scope: string, error: unknown, detail?: unknown) => unknown, note: (scope: string, message: unknown, detail?: unknown) => unknown },
  * }} [options] 注入项；测试用假 fetch、假时钟与假 sleep，绝不访问真实服务。
+ *   `journal` 是运行错误日志：失败必须留下记录，不再静默。
  * @returns {{
  *   record: (id: string) => Promise<boolean>,
  *   read: (ids: string[], settings?: { refresh?: boolean }) => Promise<{ counts: Record<string, number>, at: number, partial: boolean } | null>,
@@ -128,6 +130,7 @@ function timeoutSignal(ms) {
 export function createUsage(options = {}) {
   const fetchImpl = options.fetch ?? globalThis.fetch
   const now = typeof options.now === 'function' ? options.now : () => Date.now()
+  const journal = options.journal ?? null
   // 显式传入 enabled 时以调用方为准（测试常用）；没传时才看进程级开关。
   const enabled = options.enabled === undefined
     ? process.env.DSH_PERSONA_USAGE !== 'off'
@@ -142,6 +145,36 @@ export function createUsage(options = {}) {
         const timer = setTimeout(resolve, ms)
         if (typeof timer?.unref === 'function') timer.unref()
       })
+
+  /**
+   * 记一条错误到运行日志；日志本身不可用时也不能反过来抛错。
+   *
+   * @param {string} scope 来源。
+   * @param {unknown} error 错误值。
+   * @param {unknown} [detail] 补充信息。
+   */
+  function report(scope, error, detail) {
+    try {
+      journal?.record?.(scope, error, detail)
+    } catch {
+      /* 日志只是辅助，不能影响计数 */
+    }
+  }
+
+  /**
+   * 记一条流程细节（仅 debug 打开时保留）。
+   *
+   * @param {string} scope 来源。
+   * @param {unknown} message 文本。
+   * @param {unknown} [detail] 补充信息。
+   */
+  function trace(scope, message, detail) {
+    try {
+      journal?.note?.(scope, message, detail)
+    } catch {
+      /* 同上 */
+    }
+  }
 
   let tokens = USAGE_BUCKET_CAPACITY
   let lastRefill = now()
@@ -191,12 +224,14 @@ export function createUsage(options = {}) {
     if (status === 429) {
       openUntil = Math.max(openUntil, time + 60 * 1_000)
       failures = 0
+      trace('usage.breaker', '触发 429 退避 60 秒')
       return
     }
     failures += 1
     if (failures >= USAGE_BREAKER_THRESHOLD) {
       openUntil = time + USAGE_BREAKER_MS
       failures = 0
+      trace('usage.breaker', `连续失败 ${USAGE_BREAKER_THRESHOLD} 次，熔断 ${Math.round(USAGE_BREAKER_MS / 1_000)} 秒`)
     }
   }
 
@@ -253,14 +288,23 @@ export function createUsage(options = {}) {
    */
   async function record(id) {
     if (!enabled || !isCountableId(id)) return false
-    if (now() < openUntil) return false
-    if (!take(1)) return false
+    if (now() < openUntil) {
+      trace('usage.record', '熔断中，跳过上报', { id })
+      return false
+    }
+    if (!take(1)) {
+      trace('usage.record', '本地令牌桶已空，跳过上报', { id })
+      return false
+    }
     try {
       const data = await requestJson(`${USAGE_BASE_URL}/hit/${USAGE_NAMESPACE}/${id}`)
       if (!isCount(data?.value)) throw new Error('invalid-count')
       failures = 0
+      trace('usage.record', '上报成功', { id, value: data?.value })
       return true
     } catch (error) {
+      // 上报失败过去是静默的；现在留一条记录，便于在设置页底部查看。
+      report('usage.record', error, { id })
       noteFailure(typeof error?.status === 'number' ? error.status : 0)
       return false
     }
@@ -289,6 +333,7 @@ export function createUsage(options = {}) {
       return { counts: { ...cache.counts }, at: cache.at, partial: cache.partial }
     }
     if (startedAt < openUntil) {
+      trace('usage.read', '熔断中，跳过读取', { waitMs: openUntil - startedAt })
       return cache === null ? null : { counts: { ...cache.counts }, at: cache.at, partial: true }
     }
     if (inflightRead !== null) return inflightRead
@@ -316,6 +361,8 @@ export function createUsage(options = {}) {
           ok += 1
         } catch (error) {
           failed += 1
+          // 逐个键记录：整批失败时能看出是全部超时还是个别键异常。
+          report('usage.read', error, { id })
           // Abacus 限流是 30 次/10 秒/IP：两次快速打开设置页就会撞上。
           // 撞上就退避一分钟，让窗口复位，而不是把失败当成数据。
           if (error?.status === 429) limited = true
@@ -345,12 +392,14 @@ export function createUsage(options = {}) {
 
       if (ok === 0) {
         noteFailure(limited ? 429 : 0)
+        report('usage.read', 'all-requests-failed', { ids: wanted.length, failed })
         return cache === null ? null : { counts: { ...cache.counts }, at: cache.at, partial: true }
       }
 
       if (limited) noteFailure(429)
       else failures = 0
       const result = { counts, at: now(), partial: failed > 0 }
+      trace('usage.read', '读取完成', { ok, failed, ids: wanted.length })
       // 部分成功也缓存，但 TTL 更短：角标能立刻显示，失败的那几个键下次尽快补齐。
       cache = { counts: { ...counts }, at: result.at, partial: result.partial }
       return result

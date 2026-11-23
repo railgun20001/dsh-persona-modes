@@ -50,6 +50,7 @@ jobs:
               "src/routes.js",
               "src/store.js",
               "src/usage.js",
+              "src/errors.js",
               "cordis.patch.yml",
               "locale/zh.json",
               "locale/en.json",

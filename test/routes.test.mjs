@@ -11,6 +11,7 @@ import { join } from 'node:path'
 
 import { createRouteHandler, ROUTE_HEADER, ROUTE_PATH } from '../src/routes.js'
 import { createStore } from '../src/store.js'
+import { createErrorLog } from '../src/errors.js'
 import { MODES } from '../src/modes.js'
 
 /**
@@ -556,6 +557,130 @@ test('未知动作返回 404', async () => {
     const result = await invoke(handler, makeRequest({ action: 'nope', headers: SIGNED }))
     assert.equal(result.status, 404)
     assert.equal(result.body.error, 'unknown-action')
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('logs 返回内存日志与 debug 开关，logs/clear 清空', async () => {
+  const temp = tempStore()
+  try {
+    const errors = createErrorLog()
+    errors.record('usage.read', new Error('offline'), { id: 'catgirl' })
+    const handler = createRouteHandler(temp.store, { version: '9.9.9', errors })
+
+    const read = await invoke(handler, makeRequest({ action: 'logs', headers: SIGNED }))
+    assert.equal(read.status, 200)
+    assert.equal(read.body.ok, true)
+    assert.equal(read.body.debug, false)
+    assert.equal(read.body.entries.length, 1)
+    assert.equal(read.body.entries[0].scope, 'usage.read')
+    assert.equal(typeof read.body.limit, 'number')
+
+    const cleared = await invoke(handler, makeRequest({ action: 'logs/clear', headers: SIGNED }))
+    assert.equal(cleared.status, 200)
+    assert.equal(cleared.body.removed, 1)
+    assert.deepEqual(cleared.body.entries, [])
+
+    // 宿主没给日志对象时也不报错，只是空列表。
+    const bare = createRouteHandler(temp.store, { version: '9.9.9' })
+    const empty = await invoke(bare, makeRequest({ action: 'logs', headers: SIGNED }))
+    assert.equal(empty.status, 200)
+    assert.deepEqual(empty.body.entries, [])
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('logs/debug 打开、持久化并拒绝非布尔值', async () => {
+  const temp = tempStore()
+  try {
+    const errors = createErrorLog()
+    const handler = createRouteHandler(temp.store, { version: '9.9.9', errors })
+
+    const on = await invoke(handler, makeRequest({
+      action: 'logs/debug',
+      headers: SIGNED,
+      body: JSON.stringify({ value: true }),
+    }))
+    assert.equal(on.status, 200)
+    assert.equal(on.body.debug, true)
+    assert.equal(errors.isDebug(), true, '日志对象应同步打开调试记录')
+    assert.equal(createStore({ file: temp.store.file }).getDebug(), true, '应写入状态文件')
+
+    const bad = await invoke(handler, makeRequest({
+      action: 'logs/debug',
+      headers: SIGNED,
+      body: JSON.stringify({ value: 'yes' }),
+    }))
+    assert.equal(bad.status, 400)
+    assert.equal(bad.body.error, 'invalid-input')
+
+    const off = await invoke(handler, makeRequest({
+      action: 'logs/debug',
+      headers: SIGNED,
+      body: JSON.stringify({ value: false }),
+    }))
+    assert.equal(off.status, 200)
+    assert.equal(off.body.debug, false)
+    assert.equal(errors.isDebug(), false)
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('state 视图带 debug 字段，默认关', async () => {
+  const temp = tempStore()
+  try {
+    const handler = createRouteHandler(temp.store, { version: '9.9.9' })
+    const result = await invoke(handler, makeRequest({ action: 'state', headers: SIGNED }))
+    assert.equal(result.body.debug, false)
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('统计读取抛错时写进运行日志，而不是静默', async () => {
+  const temp = tempStore()
+  try {
+    const errors = createErrorLog()
+    const handler = createRouteHandler(temp.store, {
+      version: '9.9.9',
+      errors,
+      usage: {
+        async read() {
+          throw new Error('read-exploded')
+        },
+      },
+    })
+    const result = await invoke(handler, makeRequest({ action: 'usage', headers: SIGNED }))
+    assert.equal(result.status, 200)
+    assert.equal(result.body.fetchedAt, null)
+
+    const logs = errors.list().entries
+    assert.equal(logs.length, 1)
+    assert.equal(logs[0].scope, 'route.usage')
+    assert.match(logs[0].message, /read-exploded/u)
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('请求体不合法时留下日志', async () => {
+  const temp = tempStore()
+  try {
+    const errors = createErrorLog()
+    const handler = createRouteHandler(temp.store, { version: '9.9.9', errors })
+    const result = await invoke(handler, makeRequest({
+      action: 'select',
+      headers: SIGNED,
+      body: '{ not json',
+    }))
+    assert.equal(result.status, 400)
+    assert.equal(result.body.error, 'invalid-json')
+    const logs = errors.list().entries
+    assert.equal(logs.length, 1)
+    assert.equal(logs[0].scope, 'route.select')
   } finally {
     temp.cleanup()
   }

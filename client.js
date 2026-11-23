@@ -83,6 +83,20 @@ window.__ModuleLoader__.load({
       usageLoading: '正在读取统计…',
       usageUnavailable: '统计暂时不可用。',
       usageSaveFailed: '统计设置保存失败。',
+      logsTitle: '运行错误',
+      logsCount: '{count} 条',
+      logsEmpty: '暂无错误记录。',
+      logsHint: '只保留在内存里最近 {limit} 条，不写磁盘、不缓存；重启即清空。',
+      logsDropped: '更早的 {count} 条已丢弃',
+      logsRefresh: '刷新',
+      logsClear: '清空',
+      logsLoading: '正在读取…',
+      logsFailed: '读取失败。',
+      logsDebugOn: '调试记录中',
+      logsDebugOff: '调试记录未开（插件详情页可打开）',
+      debugTitle: '调试',
+      debugHint: '打开后，设置页底部的「运行错误」会额外记录流程细节与错误堆栈，便于排查；默认关闭。',
+      debugFailed: '调试开关保存失败。',
       edit: '编辑',
       createCustom: '新建自定义人格',
       editorEditTitle: '编辑人格',
@@ -151,6 +165,20 @@ window.__ModuleLoader__.load({
       usageLoading: 'Loading stats…',
       usageUnavailable: 'Stats are temporarily unavailable.',
       usageSaveFailed: 'Could not save stats settings.',
+      logsTitle: 'Runtime errors',
+      logsCount: '{count}',
+      logsEmpty: 'No errors recorded.',
+      logsHint: 'Keeps the latest {limit} entries in memory only — nothing is written to disk or cached; cleared on restart.',
+      logsDropped: '{count} earlier entries dropped',
+      logsRefresh: 'Refresh',
+      logsClear: 'Clear',
+      logsLoading: 'Loading…',
+      logsFailed: 'Could not load.',
+      logsDebugOn: 'Debug logging on',
+      logsDebugOff: 'Debug logging off (enable it on the plugin page)',
+      debugTitle: 'Debug',
+      debugHint: 'When on, the runtime error log at the bottom of the settings page also records flow details and error stacks. Off by default.',
+      debugFailed: 'Could not save the debug switch.',
       edit: 'Edit',
       createCustom: 'New custom persona',
       editorEditTitle: 'Edit persona',
@@ -288,6 +316,52 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * 把宿主返回的运行错误日志筛成可渲染的形状。
+     *
+     * 只认字符串字段，且条数不超过宿主声明的上限：日志面板不信任远端数据，
+     * 免得一条畸形记录把页面撑破。
+     *
+     * @param {unknown} payload 宿主响应。
+     * @returns {{ entries: Array<object>, dropped: number, limit: number }} 可渲染的日志。
+     */
+    function normalizeLogs(payload) {
+      const source = payload !== null && typeof payload === 'object' ? payload : {}
+      const limit = Number.isSafeInteger(source.limit) && source.limit > 0 ? source.limit : 50
+      const rawEntries = Array.isArray(source.entries) ? source.entries : []
+      const entries = []
+      for (const entry of rawEntries.slice(-limit)) {
+        if (entry === null || typeof entry !== 'object') continue
+        const at = typeof entry.at === 'number' && Number.isFinite(entry.at) ? entry.at : null
+        if (at === null) continue
+        entries.push({
+          at,
+          level: entry.level === 'info' ? 'info' : 'error',
+          scope: typeof entry.scope === 'string' ? entry.scope.slice(0, 40) : 'unknown',
+          message: typeof entry.message === 'string' ? entry.message.slice(0, 240) : '',
+          detail: typeof entry.detail === 'string' ? entry.detail.slice(0, 300) : '',
+        })
+      }
+      const dropped = Number.isSafeInteger(source.dropped) && source.dropped > 0 ? source.dropped : 0
+      return { entries, dropped, limit }
+    }
+
+    /**
+     * 把时间戳压成 HH:MM:SS，日志里只看时刻就够了。
+     *
+     * @param {number} at 毫秒时间戳。
+     * @returns {string} 时刻文本。
+     */
+    function formatTime(at) {
+      try {
+        const date = new Date(at)
+        const pad = (value) => String(value).padStart(2, '0')
+        return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+      } catch {
+        return '--:--:--'
+      }
+    }
+
+    /**
      * 把宿主错误码映射成用户能读懂的文案。
      *
      * @param {unknown} error 错误对象或字符串。
@@ -401,6 +475,8 @@ window.__ModuleLoader__.load({
         report: usage.report !== false,
         fetch: usage.fetch !== false,
       }
+      // debug 默认关：只有宿主明确给 true 才算打开（旧宿主没有这个字段）。
+      data.debug = data.debug === true
       return data
     }
 
@@ -664,8 +740,193 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 悬浮删除按钮的垃圾桶图标。
+     * 运行错误面板：默认折叠，位于设置页最底部。
      *
+     * 折叠时不渲染列表，只在标题上显示条数；展开时才向宿主读日志（日志本身在
+     * 宿主内存里，不落盘、不缓存）。这里不吞错：读失败会把状态写在标题右侧。
+     *
+     * @param {object} props 组件属性；`defaultOpen` 只为测试与后续复用准备。
+     * @returns {object} React 元素。
+     */
+    function RunErrors({ t, debug, logs, state, error, onRefresh, onClear, defaultOpen }) {
+      const [open, setOpen] = react.useState(defaultOpen === true)
+      const entries = logs?.entries ?? []
+      const count = entries.length
+      const toggle = () => {
+        const next = !open
+        setOpen(next)
+        // 展开时读一次：折叠期间日志可能又攒了新错误。
+        if (next && typeof onRefresh === 'function') onRefresh()
+      }
+      return h(
+        'div',
+        { className: 'pm-logs' },
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'pm-logs-head',
+            'aria-expanded': open ? 'true' : 'false',
+            onClick: toggle,
+          },
+          h('span', { className: 'pm-logs-caret', 'aria-hidden': 'true' }, open ? '▾' : '▸'),
+          h('span', { className: 'pm-logs-title' }, t('logsTitle')),
+          count > 0 ? h('span', { className: 'pm-logs-count' }, t('logsCount', { count })) : null,
+          state === 'loading' ? h('span', { className: 'pm-logs-status' }, t('logsLoading')) : null,
+          state === 'error' ? h('span', { className: 'pm-logs-status pm-logs-status-error' }, t('logsFailed')) : null,
+          debug === true ? h('span', { className: 'pm-logs-debug' }, t('logsDebugOn')) : null,
+        ),
+        open
+          ? h(
+              'div',
+              { className: 'pm-logs-body' },
+              h(
+                'div',
+                { className: 'pm-logs-actions' },
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'pm-logs-button',
+                    disabled: state === 'loading',
+                    onClick: () => {
+                      if (typeof onRefresh === 'function') onRefresh()
+                    },
+                  },
+                  t('logsRefresh'),
+                ),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'pm-logs-button',
+                    disabled: state === 'loading' || count === 0,
+                    onClick: () => {
+                      if (typeof onClear === 'function') onClear()
+                    },
+                  },
+                  t('logsClear'),
+                ),
+              ),
+              errorsText(error, t) === ''
+                ? null
+                : h('p', { className: 'pm-inline-error', role: 'alert' }, errorsText(error, t)),
+              count === 0
+                ? h('p', { className: 'pm-logs-empty' }, t('logsEmpty'))
+                : h(
+                    'ul',
+                    { className: 'pm-logs-list' },
+                    // 最新的在最上面：排查时先看最近发生了什么。
+                    entries.slice().reverse().map((entry, index) => h(
+                      'li',
+                      {
+                        key: `${entry.at}-${index}`,
+                        className: entry.level === 'info' ? 'pm-logs-row pm-logs-row-info' : 'pm-logs-row',
+                      },
+                      h('span', { className: 'pm-logs-time' }, formatTime(entry.at)),
+                      h('span', { className: 'pm-logs-scope' }, entry.scope),
+                      h('span', { className: 'pm-logs-message' }, entry.message),
+                      entry.detail === '' ? null : h('span', { className: 'pm-logs-detail' }, entry.detail),
+                    )),
+                  ),
+              debug === true ? null : h('p', { className: 'pm-logs-note' }, t('logsDebugOff')),
+              h(
+                'p',
+                { className: 'pm-logs-note' },
+                t('logsHint', { limit: logs?.limit ?? 50 }),
+                logs?.dropped > 0 ? ` · ${t('logsDropped', { count: logs.dropped })}` : '',
+              ),
+            )
+          : null,
+      )
+    }
+
+    /**
+     * 插件详情页的「调试」区块：只有本站这个人格模式插件才渲染。
+     *
+     * 这是 `plugins.detail.section` 贡献：其他组合包、行、官方插件的页面同样会
+     * 调用这个组件，因此必须按 `subject` 自行判断，非本包一律返回 null。
+     *
+     * @param {object} props 组件属性。
+     * @returns {object | null} React 元素。
+     */
+    function DebugSection({ t, subject }) {
+      const [debug, setDebug] = react.useState(null)
+      const [pending, setPending] = react.useState(false)
+      const [error, setError] = react.useState(null)
+      const mine = subject?.kind === 'bundle' && subject?.pkg?.name === PKG
+
+      react.useEffect(() => {
+        if (!mine) return undefined
+        let cancelled = false
+        const run = async () => {
+          try {
+            const data = await postRoute('logs')
+            if (!cancelled) setDebug(data?.debug === true)
+          } catch (failure) {
+            if (!cancelled) setError(failure)
+          }
+        }
+        void run()
+        return () => {
+          cancelled = true
+        }
+      }, [mine])
+
+      if (!mine) return null
+
+      const change = async (next) => {
+        if (pending) return
+        setPending(true)
+        setError(null)
+        try {
+          const data = await postRoute('logs/debug', { value: next })
+          setDebug(data?.debug === true)
+        } catch (failure) {
+          setError(failure)
+        } finally {
+          setPending(false)
+        }
+      }
+
+      return h(
+        'section',
+        { className: 'pm-detail' },
+        h('h3', { className: 'pm-detail-title' }, t('debugTitle')),
+        h(
+          'div',
+          { className: 'pm-usage-row' },
+          h('span', { className: 'pm-usage-label' }, t('debugTitle'), t('usageColon')),
+          h(Toggle, {
+            label: t('debugTitle'),
+            checked: debug === true,
+            disabled: pending || debug === null,
+            onChange: () => {
+              void change(debug !== true)
+            },
+          }),
+        ),
+        h('p', { className: 'pm-usage-note' }, t('debugHint')),
+        error === null || error === undefined
+          ? null
+          : h('p', { className: 'pm-inline-error', role: 'alert' }, t('debugFailed')),
+      )
+    }
+
+    /**
+     * 取错误面板要显示的错误文案。
+     *
+     * @param {unknown} error 错误值。
+     * @param {(key: string, params?: object) => string} t 翻译函数。
+     * @returns {string} 文案；无错误时为空串。
+     */
+    function errorsText(error, t) {
+      if (error === null || error === undefined) return ''
+      return errorText(error, t)
+    }
+
+    /**
+     * 悬浮删除按钮的垃圾桶图标。
      * 只用内联 SVG：不引入图标库，颜色由 `currentColor` 跟随主题令牌。
      *
      * @returns {object} React 元素。
@@ -902,6 +1163,12 @@ window.__ModuleLoader__.load({
         usagePending,
         usageError,
         usageRetryPending,
+        logs,
+        logsState,
+        logsError,
+        debug,
+        onRefreshLogs,
+        onClearLogs,
         policy,
         editor,
         editorBusy,
@@ -1009,6 +1276,16 @@ window.__ModuleLoader__.load({
           onRefresh: onRefreshCounts,
           cooldown: usageRetryPending === true,
         }),
+        // 运行错误放在最后：默认折叠，出问题时才展开看。
+        h(RunErrors, {
+          t,
+          debug: debug === true,
+          logs,
+          state: logsState ?? 'idle',
+          error: logsError,
+          onRefresh: onRefreshLogs,
+          onClear: onClearLogs,
+        }),
       )
     }
 
@@ -1034,6 +1311,46 @@ window.__ModuleLoader__.load({
       const [countsState, setCountsState] = react.useState('off')
       const [usagePending, setUsagePending] = react.useState(false)
       const [usageError, setUsageError] = react.useState(null)
+      const [logs, setLogs] = react.useState(null)
+      const [logsState, setLogsState] = react.useState('idle')
+      const [logsError, setLogsError] = react.useState(null)
+
+      /**
+       * 读一次运行错误日志。
+       *
+       * 日志在宿主内存里，读它只是本地往返，不会打第三方；因此挂载时读一次，
+       * 让折叠状态的标题也能显示条数，展开时再读一次拿最新内容。
+       *
+       * @param {boolean} [silent] 是否静默（挂载时的预读不改状态文案）。
+       */
+      const refreshLogs = async (silent = false) => {
+        if (!silent) {
+          setLogsState('loading')
+          setLogsError(null)
+        }
+        try {
+          const data = await postRoute('logs')
+          setLogs(normalizeLogs(data))
+          setLogsState('ready')
+        } catch (error) {
+          setLogsState('error')
+          setLogsError(error)
+        }
+      }
+
+      /** 清空宿主内存里的日志。 */
+      const clearLogs = async () => {
+        setLogsState('loading')
+        setLogsError(null)
+        try {
+          const data = await postRoute('logs/clear')
+          setLogs(normalizeLogs(data))
+          setLogsState('ready')
+        } catch (error) {
+          setLogsState('error')
+          setLogsError(error)
+        }
+      }
 
       /** 重新读取宿主状态；错误时进入统一错误态，用户可点「重试」。 */
       const load = async () => {
@@ -1055,6 +1372,30 @@ window.__ModuleLoader__.load({
             if (!cancelled) setView({ phase: 'ready', data, error: null, warning: null })
           } catch (error) {
             if (!cancelled) setView({ phase: 'error', data: null, error, warning: null })
+          }
+        }
+        void run()
+        return () => {
+          cancelled = true
+        }
+      }, [])
+
+      // 挂载时预读一次错误日志：折叠标题也能显示「有几条」。失败不改文案，
+      // 展开时的刷新会把状态写出来。
+      react.useEffect(() => {
+        let cancelled = false
+        const run = async () => {
+          try {
+            const data = await postRoute('logs')
+            if (!cancelled) {
+              setLogs(normalizeLogs(data))
+              setLogsState('ready')
+            }
+          } catch (error) {
+            if (!cancelled) {
+              setLogsState('error')
+              setLogsError(error)
+            }
           }
         }
         void run()
@@ -1409,6 +1750,16 @@ window.__ModuleLoader__.load({
         onUsageChange: changeUsage,
         onRefreshCounts: refreshCounts,
         usageRetryPending: retryPending,
+        logs,
+        logsState,
+        logsError,
+        debug: view.data?.debug === true,
+        onRefreshLogs: () => {
+          void refreshLogs()
+        },
+        onClearLogs: () => {
+          void clearLogs()
+        },
         policy: view.data?.policy,
         editor,
         editorBusy,
@@ -1478,6 +1829,31 @@ window.__ModuleLoader__.load({
       .pm-usage-status { color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
       .pm-usage-status-error { color:var(--dsw-alias-state-error-primary); }
       .pm-usage-note { margin:0; color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
+      .pm-logs { display:flex; flex-direction:column; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-1); overflow:hidden; }
+      .pm-logs-head { display:flex; align-items:center; gap:8px; padding:8px 14px; border:none; background:transparent; color:var(--dsw-alias-label-primary); font:inherit; font-size:12px; line-height:18px; text-align:left; cursor:pointer; }
+      .pm-logs-head:hover { background:var(--dsw-alias-interactive-bg-hover); }
+      .pm-logs-caret { flex:0 0 auto; width:10px; color:var(--dsw-alias-label-tertiary); }
+      .pm-logs-title { font-weight:600; }
+      .pm-logs-count { padding:0 6px; border-radius:999px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-secondary); font-size:11px; line-height:16px; }
+      .pm-logs-status { color:var(--dsw-alias-label-tertiary); font-size:11px; }
+      .pm-logs-status-error { color:var(--dsw-alias-state-error-primary); }
+      .pm-logs-debug { margin-left:auto; color:var(--dsw-alias-label-tertiary); font-size:11px; }
+      .pm-logs-body { display:flex; flex-direction:column; gap:8px; padding:0 14px 10px; border-top:1px solid var(--dsw-alias-border-l2); }
+      .pm-logs-actions { display:flex; gap:8px; padding-top:8px; }
+      .pm-logs-button { padding:2px 10px; border:1px solid var(--dsw-alias-border-l2); border-radius:6px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-secondary); font:inherit; font-size:11px; line-height:16px; cursor:pointer; }
+      .pm-logs-button:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover); color:var(--dsw-alias-label-primary); }
+      .pm-logs-button:disabled { opacity:.6; cursor:default; }
+      .pm-logs-empty { margin:0; color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
+      .pm-logs-list { display:flex; flex-direction:column; gap:4px; margin:0; padding:0; list-style:none; max-height:240px; overflow:auto; }
+      .pm-logs-row { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; padding:4px 8px; border-radius:8px; background:var(--dsw-alias-bg-layer-2); font-size:11px; line-height:16px; }
+      .pm-logs-row-info { opacity:.75; }
+      .pm-logs-time { flex:0 0 auto; color:var(--dsw-alias-label-tertiary); font-variant-numeric:tabular-nums; }
+      .pm-logs-scope { flex:0 0 auto; color:var(--dsw-alias-label-secondary); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+      .pm-logs-message { flex:1 1 160px; color:var(--dsw-alias-label-primary); word-break:break-word; }
+      .pm-logs-detail { flex:1 1 100%; color:var(--dsw-alias-label-tertiary); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; word-break:break-all; }
+      .pm-logs-note { margin:0; color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
+      .pm-detail { display:flex; flex-direction:column; gap:8px; padding:10px 14px; border:1px solid var(--dsw-alias-border-l2); border-radius:12px; background:var(--dsw-alias-bg-layer-1); }
+      .pm-detail-title { margin:0; font-size:13px; line-height:20px; font-weight:600; }
       .pm-heat { position:absolute; top:8px; right:8px; padding:1px 7px; border-radius:999px; background:#dc2626; color:#fff; font-size:10px; line-height:16px; font-weight:600; pointer-events:none; }
       .pm-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
       .pm-card-wrap { position:relative; display:flex; min-width:0; }
@@ -1593,6 +1969,22 @@ window.__ModuleLoader__.load({
       } catch (error) {
         console.warn(`[${PKG}] 设置分区注册失败`, error)
       }
+
+      // 插件详情页的「调试」区块：`plugins.detail.section` 是全局 list slot，
+      // 每个组合包/行/官方插件的页面都会调用它，组件内部按 subject 自行过滤。
+      // 插槽由插件管理页声明，未打开过插件页时注入会一直等待——这是插槽框架的
+      // 正常行为，不影响设置页。
+      try {
+        ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({
+          name: 'plugins.detail.section',
+          id: 'persona-modes-debug',
+          order: 40,
+          locale: NS,
+          inject: () => ({ locale: ctx.locale }),
+        }, DebugSection))
+      } catch (error) {
+        console.warn(`[${PKG}] 插件详情区块注册失败`, error)
+      }
     }
 
     exports.apply = apply
@@ -1601,9 +1993,13 @@ window.__ModuleLoader__.load({
       NS,
       SECTION_ORDER,
       PersonaView,
+      RunErrors,
+      DebugSection,
       normalizePayload,
       normalizeCounts,
+      normalizeLogs,
       formatCount,
+      formatTime,
       errorText,
       readLocaleId,
     }

@@ -43,8 +43,8 @@ export const STATE_DIR = join(DSH_HOME, 'persona-modes')
 /** 默认状态文件。 */
 export const STATE_FILE = join(STATE_DIR, 'state.json')
 
-/** 状态文件格式版本；未来形状变化时用于迁移。v3 增加 `usage` 统计开关。 */
-export const STATE_VERSION = 3
+/** 状态文件格式版本；未来形状变化时用于迁移。v3 增加 `usage` 统计开关，v4 增加 `debug` 调试开关。 */
+export const STATE_VERSION = 4
 
 /** 匿名统计的出厂默认：参与与展示都开（用户可在设置里逐项关闭）。 */
 export const DEFAULT_USAGE_PREFS = Object.freeze({ report: true, fetch: true })
@@ -111,6 +111,19 @@ export function normalizeUsagePrefs(value) {
     report: source.report !== false,
     fetch: source.fetch !== false,
   }
+}
+
+/**
+ * 规整 debug 开关。
+ *
+ * 默认关：只有明确的 `true` 才算打开。调试记录会带上更多细节，不该在用户没同意
+ * 的时候自行开启。
+ *
+ * @param {unknown} value 原始值。
+ * @returns {boolean} 是否开启。
+ */
+export function normalizeDebug(value) {
+  return value === true
 }
 
 /**
@@ -208,6 +221,7 @@ function normalizeOverrides(value) {
  *   active: string,
  *   intensity: string,
  *   usage: { report: boolean, fetch: boolean },
+ *   debug: boolean,
  *   overrides: Record<string, object>,
  *   customModes: Array<object>,
  *   updatedAt?: string,
@@ -226,6 +240,7 @@ export function readStateFile(file = STATE_FILE) {
       active: parsed.active,
       intensity: normalizeIntensity(parsed.intensity),
       usage: normalizeUsagePrefs(parsed.usage),
+      debug: normalizeDebug(parsed.debug),
       overrides,
       customModes,
       ...(typeof parsed.updatedAt === 'string' ? { updatedAt: parsed.updatedAt } : {}),
@@ -281,11 +296,13 @@ function newCustomId(customModes) {
  * 不会因为磁盘只读就让设置页完全不可用。写入结果通过 `persisted` 暴露，路由会把
  * 降级状态告诉客户端。
  *
- * @param {{ file?: string, defaultMode?: string }} [options] 存储选项。
+ * @param {{ file?: string, defaultMode?: string, journal?: { record: (scope: string, error: unknown, detail?: unknown) => unknown } }} [options] 存储选项。
+ *   `journal` 是运行错误日志：写盘失败过去只反映在 `persisted` 里，现在同时留记录。
  * @returns {object} 存储对象。
  */
 export function createStore(options = {}) {
   const file = typeof options.file === 'string' && options.file !== '' ? options.file : STATE_FILE
+  const journal = options.journal ?? null
   const fallback = normalizeModeId(options.defaultMode, DEFAULT_MODE_ID)
   const loaded = readStateFile(file)
   let persisted = loaded !== null
@@ -294,6 +311,7 @@ export function createStore(options = {}) {
     active: fallback,
     intensity: DEFAULT_INTENSITY,
     usage: { ...DEFAULT_USAGE_PREFS },
+    debug: false,
     overrides: {},
     customModes: [],
   }
@@ -307,6 +325,14 @@ export function createStore(options = {}) {
   function commit(next) {
     const wrote = writeStateFile(next, file)
     if (wrote) persisted = true
+    if (!wrote) {
+      // 写盘失败不影响本次会话，但重启会回到旧值：留一条可查的记录。
+      try {
+        journal?.record?.('store.persist', 'state-file-write-failed', { file })
+      } catch {
+        /* 日志只是辅助 */
+      }
+    }
     state = next
     return wrote
   }
@@ -358,13 +384,32 @@ export function createStore(options = {}) {
       return { usage: next, persisted: wrote }
     },
 
+    /** 当前 debug 开关（默认关）。 */
+    getDebug() {
+      return state.debug === true
+    },
+
+    /**
+     * 更新 debug 开关。
+     *
+     * 只接受布尔值；其他类型返回 null，由路由映射成 400。
+     *
+     * @param {unknown} value 新值。
+     * @returns {{ debug: boolean, persisted: boolean } | null} 更新结果。
+     */
+    setDebug(value) {
+      if (typeof value !== 'boolean') return null
+      if (value === (state.debug === true) && persisted) return { debug: value, persisted: true }
+      const wrote = commit({ ...state, debug: value, updatedAt: new Date().toISOString() })
+      return { debug: value, persisted: wrote }
+    },
+
     /**
      * 设置全局语气强度。
      *
      * @param {unknown} value 目标档位。
      * @returns {{ intensity: string, persisted: boolean }} 设置结果。
-     */
-    setIntensity(value) {
+     */    setIntensity(value) {
       const intensity = normalizeIntensity(value)
       if (intensity === state.intensity && persisted) return { intensity, persisted: true }
       const next = {

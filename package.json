@@ -1,6 +1,6 @@
 {
   "name": "dsh-persona-modes",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "description": "DeepSeek Harness 人格模式：在设置里一键切换猫娘、傲娇、毒舌、妈妈、牛马、鲸鱼娘、女仆（嫌弃脸）、大小姐、女儿、奥特曼-迪迦、病娇、蠢萌、舔狗、游戏宅女、妃子等语气；支持低/中/高三档语气强度、称呼/自称/提示词编辑与自定义人格；提示词按条注入，关闭时 0 字；附可关闭的匿名对话轮次统计。",
   "keywords": [
@@ -65,8 +65,8 @@
     "manifestVersion": 1
   },
   "scripts": {
-    "test": "node --test test/modes.test.mjs test/store.test.mjs test/routes.test.mjs test/apply.test.mjs test/client.test.mjs test/usage.test.mjs",
-    "check": "node --test test/modes.test.mjs test/store.test.mjs test/routes.test.mjs test/apply.test.mjs test/client.test.mjs test/usage.test.mjs",
+    "test": "node --test test/modes.test.mjs test/store.test.mjs test/routes.test.mjs test/apply.test.mjs test/client.test.mjs test/usage.test.mjs test/errors.test.mjs",
+    "check": "node --test test/modes.test.mjs test/store.test.mjs test/routes.test.mjs test/apply.test.mjs test/client.test.mjs test/usage.test.mjs test/errors.test.mjs",
     "prepublishOnly": "npm test"
   },
   "engines": {
@@ -79,6 +79,6 @@
   },
   "meta": {
     "title": "人格模式",
-    "description": "设置里一键切换猫娘、傲娇、毒舌、妈妈、牛马、鲸鱼娘、女仆（嫌弃脸）、大小姐、女儿、奥特曼-迪迦、病娇、蠢萌、舔狗、游戏宅女、妃子等语气；支持低/中/高三档强度、称呼/自称/提示词编辑与自定义人格；只改表达，不改事实与代码；附可关闭的匿名轮次统计。"
+    "description": "设置里一键切换猫娘、傲娇、毒舌、妈妈、牛马、鲸鱼娘、女仆（嫌弃脸）、大小姐、女儿、奥特曼-迪迦、病娇、蠢萌、舔狗、游戏宅女、妃子等语气；支持低/中/高三档强度、称呼/自称/提示词编辑与自定义人格；只改表达，不改事实与代码；附可关闭的匿名轮次统计与内存态运行错误日志（插件页可开调试）。"
   }
 }

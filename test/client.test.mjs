@@ -163,6 +163,12 @@ assert.equal(section.options.label(), '人格模式')
 assert.ok(runResult.styleText.includes('.pm-card'), '样式没有注入')
 assert.ok(runResult.styleText.includes('--dsw-alias-'), '样式没有使用主题令牌')
 
+// 插件详情页的调试区块也注册了，且 key 指向本包。
+const detailSection = runResult.registered.find((entry) => entry.options.name === 'plugins.detail.section')
+assert.ok(detailSection, '没有注册 plugins.detail.section')
+assert.equal(detailSection.options.id, 'persona-modes-debug')
+assert.equal(typeof detailSection.Component, 'function')
+
 // ── 字典键集 ────────────────────────────────────────────────────────────────
 const dictionaries = runResult.dictionaries['persona-modes']
 assert.ok(dictionaries, '没有注册字典')
@@ -674,3 +680,119 @@ assert.deepEqual(
   normalizePayload({ ...data }).usage,
   { report: true, fetch: true },
 )
+
+// ── 运行错误面板 ────────────────────────────────────────────────────────────
+const { RunErrors, DebugSection, normalizeLogs, formatTime } = globalThis.__personaExports.__test
+
+const logPayload = {
+  ok: true,
+  debug: false,
+  limit: 50,
+  dropped: 2,
+  entries: [
+    { at: new Date(2026, 10, 23, 15, 4, 5).getTime(), level: 'error', scope: 'usage.read', message: 'fetch failed', detail: 'id=catgirl' },
+    { at: new Date(2026, 10, 23, 15, 4, 9).getTime(), level: 'error', scope: 'route.usage', message: 'all-requests-failed' },
+    { at: 1, level: 'weird', scope: 42, message: null },
+    null,
+  ],
+}
+const normalizedLogs = normalizeLogs(logPayload)
+assert.equal(normalizedLogs.limit, 50)
+assert.equal(normalizedLogs.dropped, 2)
+assert.equal(normalizedLogs.entries.length, 3, '坏条目被丢弃')
+assert.equal(normalizedLogs.entries[0].scope, 'usage.read')
+assert.equal(normalizedLogs.entries[1].level, 'error')
+assert.equal(formatTime(new Date(2026, 10, 23, 15, 4, 5).getTime()), '15:04:05')
+
+// 折叠态：只有标题与条数，不渲染列表；点标题会去刷新。
+let logRefresh = 0
+const collapsed = RunErrors({
+  t,
+  debug: false,
+  logs: normalizedLogs,
+  state: 'ready',
+  error: null,
+  onRefresh: () => {
+    logRefresh += 1
+  },
+  onClear: () => {},
+})
+const collapsedFlat = flatten(collapsed)
+assert.ok(textOf(collapsed).includes('运行错误'))
+assert.ok(textOf(collapsed).includes('3 条'))
+assert.equal(
+  collapsedFlat.filter((node) => node.props?.className === 'pm-logs-list').length,
+  0,
+  '默认应折叠，不渲染列表',
+)
+const head = collapsedFlat.find((node) => node.props?.className === 'pm-logs-head')
+assert.ok(head, '没有渲染折叠标题')
+assert.equal(head.props['aria-expanded'], 'false')
+head.props.onClick()
+assert.equal(logRefresh, 1, '展开时应触发一次刷新')
+
+// 展开且 debug 关闭时，提示去哪里打开调试记录。
+const quiet = RunErrors({
+  t,
+  debug: false,
+  logs: normalizedLogs,
+  state: 'ready',
+  error: null,
+  onRefresh: () => {},
+  onClear: () => {},
+  defaultOpen: true,
+})
+assert.ok(textOf(quiet).includes('调试记录未开'))
+
+// 展开态：渲染每一条，并显示条数上限说明。
+const expanded = RunErrors({
+  t,
+  debug: true,
+  logs: normalizedLogs,
+  state: 'ready',
+  error: null,
+  onRefresh: () => {},
+  onClear: () => {},
+  defaultOpen: true,
+})
+const expandedText = textOf(expanded)
+assert.ok(expandedText.includes('usage.read'))
+assert.ok(expandedText.includes('fetch failed'))
+assert.ok(expandedText.includes('id=catgirl'))
+assert.ok(expandedText.includes('15:04:05'))
+assert.ok(expandedText.includes('最近 50 条'))
+assert.ok(expandedText.includes('更早的 2 条已丢弃'))
+assert.ok(expandedText.includes('调试记录中'))
+assert.ok(!expandedText.includes('调试记录未开'))
+
+// 空日志：显示「暂无错误记录」。
+const empty = RunErrors({
+  t,
+  debug: false,
+  logs: { entries: [], dropped: 0, limit: 50 },
+  state: 'ready',
+  error: null,
+  onRefresh: () => {},
+  onClear: () => {},
+  defaultOpen: true,
+})
+assert.ok(textOf(empty).includes('暂无错误记录'))
+
+// ── 插件详情页的调试区块 ────────────────────────────────────────────────────
+// 别人的组合包页面：什么都不渲染。
+const foreign = DebugSection({
+  t,
+  subject: { kind: 'bundle', pkg: { name: '@acme/other' } },
+})
+assert.equal(foreign, null)
+assert.equal(DebugSection({ t, subject: { kind: 'item', id: 'x' } }), null)
+
+// 本包页面：渲染标题、开关与说明。
+const mine = DebugSection({ t, subject: { kind: 'bundle', pkg: { name: 'dsh-persona-modes' } } })
+const mineFlat = flatten(mine)
+const mineText = textOf(mine)
+assert.ok(mineText.includes('调试'))
+assert.ok(mineText.includes('默认关闭'))
+const debugToggle = mineFlat.find((node) => node.props?.role === 'switch')
+assert.ok(debugToggle, '没有渲染调试开关')
+assert.equal(debugToggle.props['aria-label'], '调试')

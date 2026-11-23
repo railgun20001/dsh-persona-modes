@@ -54,7 +54,7 @@ test('setActive 校验 id、写盘并可被新实例读回', () => {
     assert.equal(reloaded.getActive(), 'catgirl')
 
     const raw = JSON.parse(readFileSync(temp.file, 'utf8'))
-    assert.equal(raw.version, 3)
+    assert.equal(raw.version, 4)
     assert.equal(raw.active, 'catgirl')
     assert.match(raw.updatedAt, /^\d{4}-\d{2}-\d{2}T/u)
   } finally {
@@ -131,10 +131,11 @@ test('readStateFile 接受合法文件并迁移 v1 形状', () => {
   try {
     writeFileSync(temp.file, JSON.stringify({ active: 'whale' }), 'utf8')
     assert.deepEqual(readStateFile(temp.file), {
-      version: 3,
+      version: 4,
       active: 'whale',
       intensity: 'low',
       usage: { report: true, fetch: true },
+      debug: false,
       overrides: {},
       customModes: [],
     })
@@ -311,16 +312,61 @@ test('旧状态缺少 usage 时默认开，坏值也回落开', () => {
   }
 })
 
-test('writeStateFile 在目标目录不存在时会创建目录', () => {
+test('debug 开关默认关、可持久化、坏值回落关', () => {
   const temp = tempState()
+  try {
+    const store = createStore({ file: temp.file })
+    assert.equal(store.getDebug(), false)
+    assert.deepEqual(store.setDebug(true), { debug: true, persisted: true })
+    assert.equal(createStore({ file: temp.file }).getDebug(), true)
+
+    assert.equal(store.setDebug('yes'), null, '非布尔值应被拒绝')
+    assert.equal(store.setDebug(false).debug, false)
+
+    // 旧文件没有 debug 字段、或写了坏值，都回落「关」。
+    writeFileSync(temp.file, JSON.stringify({ version: 3, active: 'catgirl', debug: 'on' }), 'utf8')
+    assert.equal(createStore({ file: temp.file }).getDebug(), false)
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('写盘失败时把原因写进运行日志', () => {
+  const temp = tempState()
+  try {
+    const layout = {
+      file: join(temp.dir, 'blocked', 'state.json'),
+      defaultMode: 'catgirl',
+    }
+    const journal = []
+    const store = createStore({
+      ...layout,
+      journal: { record: (scope, error, detail) => journal.push({ scope, error, detail }) },
+    })
+    // 造一个必然写不进去的目标：用已存在的文件当目录。
+    const blocker = join(temp.dir, 'blocked')
+    writeFileSync(blocker, 'x', 'utf8')
+    const failed = store.setActive('mom')
+    assert.equal(failed.persisted, false)
+    assert.equal(store.getActive(), 'mom', '内存仍然生效')
+    assert.equal(journal.length, 1)
+    assert.equal(journal[0].scope, 'store.persist')
+    assert.equal(journal[0].detail.file, layout.file)
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('writeStateFile 在目标目录不存在时会创建目录', () => {  const temp = tempState()
   try {
     const nested = join(temp.dir, 'nested', 'state.json')
     assert.equal(writeStateFile({ version: 2, active: 'sharp' }, nested), true)
     assert.deepEqual(readStateFile(nested), {
-      version: 3,
+      version: 4,
       active: 'sharp',
       intensity: 'low',
       usage: { report: true, fetch: true },
+      debug: false,
       overrides: {},
       customModes: [],
     })

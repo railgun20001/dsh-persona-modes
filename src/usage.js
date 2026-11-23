@@ -30,6 +30,16 @@ export const USAGE_NAMESPACE = 'dsh-persona-modes'
  */
 export const USAGE_TIMEOUT_MS = 4_000
 
+/**
+ * 批量读取用的超时。
+ *
+ * Abacus 无 SLA，降级时单键响应会拖到 3 秒以上（2026-11-23 实测：走代理
+ * 2.9 秒、直连 4.3 秒，还夹着 HTTP 500）。上报每轮一次、失败就作罢，维持
+ * 4 秒；读取最多一天一两次（结果缓存 24 小时）且并发进行，多等几秒不拖
+ * 体验，能把骑在边界上的慢响应救回来。
+ */
+export const USAGE_READ_TIMEOUT_MS = 8_000
+
 /** 读取结果的缓存时长：打开设置页默认只读缓存，过期或点「刷新」才再请求第三方。 */
 export const USAGE_CACHE_MS = 24 * 60 * 60 * 1_000
 
@@ -150,8 +160,14 @@ export function isTimeoutError(error) {
  */
 function reportReadFailures(list, ok, record) {
   if (list.length === 0) return
+  // 超时的原始错误是 undici 英文长句；两个分支都换成带阈值的中文文案。
   if (list.length === 1) {
-    record('usage.read', list[0].error, { id: list[0].id, host: USAGE_HOST })
+    const [first] = list
+    if (isTimeoutError(first.error)) {
+      record('usage.read', `单个人格数据读取超时（超过 ${USAGE_READ_TIMEOUT_MS / 1_000} 秒）`, { id: first.id, host: USAGE_HOST })
+    } else {
+      record('usage.read', first.error, { id: first.id, host: USAGE_HOST })
+    }
     return
   }
   const codes = [...new Set(list.map((item) => {
@@ -163,7 +179,7 @@ function reportReadFailures(list, ok, record) {
   const sample = list.slice(0, 3).map((item) => item.id).join(',')
   const allTimeout = list.every((item) => isTimeoutError(item.error))
   const message = allTimeout
-    ? `${list.length} 个人格数据读取超时（超过 ${USAGE_TIMEOUT_MS / 1_000} 秒）`
+    ? `${list.length} 个人格数据读取超时（超过 ${USAGE_READ_TIMEOUT_MS / 1_000} 秒）`
     : `${list.length} 个人格数据读取失败（${codes.join('/')}）`
   // 只报告「有没有配代理」，不读代理的具体值：日志不该带凭据。
   const proxyConfigured = typeof process !== 'undefined'
@@ -313,12 +329,13 @@ export function createUsage(options = {}) {
    * 请求一个 JSON 端点。
    *
    * @param {string} url 完整地址。
-   * @param {{ notFoundOk?: boolean }} [settings] 是否把 404 当作合法结果。
+   * @param {{ notFoundOk?: boolean, timeoutMs?: number }} [settings]
+   *   `notFoundOk`：把 404 当作合法结果；`timeoutMs`：本次请求超时，缺省用上报超时。
    * @returns {Promise<any>} 解析后的 JSON；`notFoundOk` 下 404 返回 null。
    */
   async function requestJson(url, settings = {}) {
     if (typeof fetchImpl !== 'function') throw new Error('fetch-unavailable')
-    const { signal, dispose } = timeoutSignal(USAGE_TIMEOUT_MS)
+    const { signal, dispose } = timeoutSignal(settings.timeoutMs ?? USAGE_TIMEOUT_MS)
     let response
     try {
       response = await fetchImpl(url, {
@@ -430,7 +447,7 @@ export function createUsage(options = {}) {
         try {
           const data = await requestJson(
             `${USAGE_BASE_URL}/get/${USAGE_NAMESPACE}/${id}`,
-            { notFoundOk: true },
+            { notFoundOk: true, timeoutMs: USAGE_READ_TIMEOUT_MS },
           )
           // 键还没被创建时返回 null：视为 0，不展示。
           if (data === null) {

@@ -18,6 +18,8 @@ import {
   USAGE_MAX_BODY,
   USAGE_NAMESPACE,
   USAGE_PARTIAL_CACHE_MS,
+  USAGE_READ_TIMEOUT_MS,
+  USAGE_TIMEOUT_MS,
 } from '../src/usage.js'
 
 /**
@@ -409,6 +411,25 @@ test('上报超时记中文文案并带阈值', async () => {
   assert.equal(journal.records[0].detail.host, 'abacus.jasoncameron.dev')
 })
 
+test('read 使用独立的 8 秒读取超时，record 仍是 4 秒', async () => {
+  // AbortSignal.timeout 不暴露毫秒数；拦下它记录入参，验证两条路径的接线。
+  const original = AbortSignal.timeout
+  const seen = []
+  AbortSignal.timeout = function stub(ms) {
+    seen.push(ms)
+    return original.call(AbortSignal, ms)
+  }
+  try {
+    const fake = fakeFetch(() => jsonResponse({ value: 1 }))
+    const usage = createUsage({ fetch: fake.fetch, enabled: true })
+    await usage.read(['catgirl', 'mom'])
+    assert.equal(await usage.record('whale'), true)
+    assert.deepEqual(seen, [USAGE_READ_TIMEOUT_MS, USAGE_READ_TIMEOUT_MS, USAGE_TIMEOUT_MS])
+  } finally {
+    AbortSignal.timeout = original
+  }
+})
+
 test('多个键同时超时只写一条汇总日志，并给出排查方向', async () => {
   const names = ['https_proxy', 'HTTPS_PROXY', 'http_proxy', 'HTTP_PROXY', 'all_proxy', 'ALL_PROXY']
   // 代理环境变量会影响提示文案：保存现场，测完恢复，测试不依赖宿主机配置。
@@ -432,7 +453,7 @@ test('多个键同时超时只写一条汇总日志，并给出排查方向', as
     assert.equal(result, null, '全部失败且无缓存时返回 null')
     let readEntries = journal.records.filter((entry) => entry.scope === 'usage.read')
     assert.equal(readEntries.length, 1, '四个键失败只记一条')
-    assert.match(readEntries[0].error, /4 个人格数据读取超时（超过 4 秒）/u)
+    assert.match(readEntries[0].error, /4 个人格数据读取超时（超过 8 秒）/u)
     assert.equal(readEntries[0].detail.failed, 4)
     assert.equal(readEntries[0].detail.sample, 'catgirl,mom,sharp')
     assert.equal(readEntries[0].detail.host, 'abacus.jasoncameron.dev')

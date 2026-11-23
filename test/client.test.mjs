@@ -708,7 +708,6 @@ assert.equal(formatTime(new Date(2026, 10, 23, 15, 4, 5).getTime()), '15:04:05')
 let logRefresh = 0
 const collapsed = RunErrors({
   t,
-  debug: false,
   logs: normalizedLogs,
   state: 'ready',
   error: null,
@@ -731,23 +730,9 @@ assert.equal(head.props['aria-expanded'], 'false')
 head.props.onClick()
 assert.equal(logRefresh, 1, '展开时应触发一次刷新')
 
-// 展开且 debug 关闭时，提示去哪里打开调试记录。
-const quiet = RunErrors({
-  t,
-  debug: false,
-  logs: normalizedLogs,
-  state: 'ready',
-  error: null,
-  onRefresh: () => {},
-  onClear: () => {},
-  defaultOpen: true,
-})
-assert.ok(textOf(quiet).includes('调试记录未开'))
-
 // 展开态：渲染每一条，并显示条数上限说明。
 const expanded = RunErrors({
   t,
-  debug: true,
   logs: normalizedLogs,
   state: 'ready',
   error: null,
@@ -762,13 +747,10 @@ assert.ok(expandedText.includes('id=catgirl'))
 assert.ok(expandedText.includes('15:04:05'))
 assert.ok(expandedText.includes('最近 50 条'))
 assert.ok(expandedText.includes('更早的 2 条已丢弃'))
-assert.ok(expandedText.includes('调试记录中'))
-assert.ok(!expandedText.includes('调试记录未开'))
 
 // 空日志：显示「暂无错误记录」。
 const empty = RunErrors({
   t,
-  debug: false,
   logs: { entries: [], dropped: 0, limit: 50 },
   state: 'ready',
   error: null,
@@ -777,6 +759,58 @@ const empty = RunErrors({
   defaultOpen: true,
 })
 assert.ok(textOf(empty).includes('暂无错误记录'))
+
+// ── 面板只在调试打开时出现 ──────────────────────────────────────────────────
+const quietView = PersonaView({
+  t,
+  localeId: 'zh',
+  data,
+  pendingId: null,
+  error: null,
+  usage: { report: true, fetch: true },
+  counts: {},
+  countsState: 'ready',
+  debug: false,
+  logs: normalizedLogs,
+  logsState: 'ready',
+  onSelect: () => {},
+  onRetry: () => {},
+  onEdit: () => {},
+  onCreate: () => {},
+})
+assert.equal(
+  flatten(quietView).filter((node) => node.props?.className === 'pm-logs').length,
+  0,
+  '调试关闭时不应渲染运行错误面板',
+)
+assert.ok(!textOf(quietView).includes('运行错误'))
+
+const debugView = PersonaView({
+  t,
+  localeId: 'zh',
+  data,
+  pendingId: null,
+  error: null,
+  usage: { report: true, fetch: true },
+  counts: {},
+  countsState: 'ready',
+  debug: true,
+  logs: normalizedLogs,
+  logsState: 'ready',
+  onRefreshLogs: () => {},
+  onClearLogs: () => {},
+  onSelect: () => {},
+  onRetry: () => {},
+  onEdit: () => {},
+  onCreate: () => {},
+})
+const debugFlat = flatten(debugView)
+const logsIndex = debugFlat.findIndex((node) => node.props?.className === 'pm-logs')
+const usageIndexDebug = debugFlat.findIndex((node) => node.props?.className === 'pm-usage')
+assert.ok(logsIndex > 0, '调试打开时应渲染运行错误面板')
+assert.ok(logsIndex > usageIndexDebug, '运行错误面板应排在统计设置条之后')
+assert.ok(textOf(debugView).includes('运行错误'))
+assert.ok(textOf(debugView).includes('3 条'))
 
 // ── 插件详情页的调试区块 ────────────────────────────────────────────────────
 // 别人的组合包页面：什么都不渲染。

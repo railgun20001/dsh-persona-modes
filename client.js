@@ -92,10 +92,8 @@ window.__ModuleLoader__.load({
       logsClear: '清空',
       logsLoading: '正在读取…',
       logsFailed: '读取失败。',
-      logsDebugOn: '调试记录中',
-      logsDebugOff: '调试记录未开（插件详情页可打开）',
       debugTitle: '调试',
-      debugHint: '打开后，设置页底部的「运行错误」会额外记录流程细节与错误堆栈，便于排查；默认关闭。',
+      debugHint: '打开后，设置页底部会显示「运行错误」面板，并在其中额外记录流程细节与错误堆栈，便于排查；默认关闭。',
       debugFailed: '调试开关保存失败。',
       edit: '编辑',
       createCustom: '新建自定义人格',
@@ -174,10 +172,8 @@ window.__ModuleLoader__.load({
       logsClear: 'Clear',
       logsLoading: 'Loading…',
       logsFailed: 'Could not load.',
-      logsDebugOn: 'Debug logging on',
-      logsDebugOff: 'Debug logging off (enable it on the plugin page)',
       debugTitle: 'Debug',
-      debugHint: 'When on, the runtime error log at the bottom of the settings page also records flow details and error stacks. Off by default.',
+      debugHint: 'When on, the settings page shows a “Runtime errors” panel at the bottom and also records flow details and error stacks there. Off by default.',
       debugFailed: 'Could not save the debug switch.',
       edit: 'Edit',
       createCustom: 'New custom persona',
@@ -742,13 +738,14 @@ window.__ModuleLoader__.load({
     /**
      * 运行错误面板：默认折叠，位于设置页最底部。
      *
+     * 只在 debug 打开时挂载（由上层决定），因此这里不再解释开关在哪。
      * 折叠时不渲染列表，只在标题上显示条数；展开时才向宿主读日志（日志本身在
      * 宿主内存里，不落盘、不缓存）。这里不吞错：读失败会把状态写在标题右侧。
      *
      * @param {object} props 组件属性；`defaultOpen` 只为测试与后续复用准备。
      * @returns {object} React 元素。
      */
-    function RunErrors({ t, debug, logs, state, error, onRefresh, onClear, defaultOpen }) {
+    function RunErrors({ t, logs, state, error, onRefresh, onClear, defaultOpen }) {
       const [open, setOpen] = react.useState(defaultOpen === true)
       const entries = logs?.entries ?? []
       const count = entries.length
@@ -774,7 +771,6 @@ window.__ModuleLoader__.load({
           count > 0 ? h('span', { className: 'pm-logs-count' }, t('logsCount', { count })) : null,
           state === 'loading' ? h('span', { className: 'pm-logs-status' }, t('logsLoading')) : null,
           state === 'error' ? h('span', { className: 'pm-logs-status pm-logs-status-error' }, t('logsFailed')) : null,
-          debug === true ? h('span', { className: 'pm-logs-debug' }, t('logsDebugOn')) : null,
         ),
         open
           ? h(
@@ -829,7 +825,6 @@ window.__ModuleLoader__.load({
                       entry.detail === '' ? null : h('span', { className: 'pm-logs-detail' }, entry.detail),
                     )),
                   ),
-              debug === true ? null : h('p', { className: 'pm-logs-note' }, t('logsDebugOff')),
               h(
                 'p',
                 { className: 'pm-logs-note' },
@@ -1276,16 +1271,17 @@ window.__ModuleLoader__.load({
           onRefresh: onRefreshCounts,
           cooldown: usageRetryPending === true,
         }),
-        // 运行错误放在最后：默认折叠，出问题时才展开看。
-        h(RunErrors, {
-          t,
-          debug: debug === true,
-          logs,
-          state: logsState ?? 'idle',
-          error: logsError,
-          onRefresh: onRefreshLogs,
-          onClear: onClearLogs,
-        }),
+        // 运行错误只在调试打开时出现：它默认折叠，且不开调试时不该占版面。
+        debug === true
+          ? h(RunErrors, {
+              t,
+              logs,
+              state: logsState ?? 'idle',
+              error: logsError,
+              onRefresh: onRefreshLogs,
+              onClear: onClearLogs,
+            })
+          : null,
       )
     }
 
@@ -1318,16 +1314,12 @@ window.__ModuleLoader__.load({
       /**
        * 读一次运行错误日志。
        *
-       * 日志在宿主内存里，读它只是本地往返，不会打第三方；因此挂载时读一次，
-       * 让折叠状态的标题也能显示条数，展开时再读一次拿最新内容。
-       *
-       * @param {boolean} [silent] 是否静默（挂载时的预读不改状态文案）。
+       * 日志在宿主内存里，读它只是本地往返，不打第三方；展开面板或点「刷新」
+       * 时调用，让折叠标题上的条数和列表内容保持一致。
        */
-      const refreshLogs = async (silent = false) => {
-        if (!silent) {
-          setLogsState('loading')
-          setLogsError(null)
-        }
+      const refreshLogs = async () => {
+        setLogsState('loading')
+        setLogsError(null)
         try {
           const data = await postRoute('logs')
           setLogs(normalizeLogs(data))
@@ -1380,9 +1372,15 @@ window.__ModuleLoader__.load({
         }
       }, [])
 
-      // 挂载时预读一次错误日志：折叠标题也能显示「有几条」。失败不改文案，
-      // 展开时的刷新会把状态写出来。
+      // 只有调试打开时才预读日志：不调试就不发这条请求，也不占版面。
       react.useEffect(() => {
+        if (view.phase !== 'ready') return undefined
+        if (view.data?.debug !== true) {
+          setLogs(null)
+          setLogsState('idle')
+          setLogsError(null)
+          return undefined
+        }
         let cancelled = false
         const run = async () => {
           try {
@@ -1402,7 +1400,7 @@ window.__ModuleLoader__.load({
         return () => {
           cancelled = true
         }
-      }, [])
+      }, [view.phase, view.data?.debug])
 
       // 「显示统计」打开时拉一次计数；宿主默认只读缓存，不会每次打开设置页
       // 都打第三方。切换开关会改变依赖，从而自动重拉或清空。
@@ -1837,7 +1835,6 @@ window.__ModuleLoader__.load({
       .pm-logs-count { padding:0 6px; border-radius:999px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-secondary); font-size:11px; line-height:16px; }
       .pm-logs-status { color:var(--dsw-alias-label-tertiary); font-size:11px; }
       .pm-logs-status-error { color:var(--dsw-alias-state-error-primary); }
-      .pm-logs-debug { margin-left:auto; color:var(--dsw-alias-label-tertiary); font-size:11px; }
       .pm-logs-body { display:flex; flex-direction:column; gap:8px; padding:0 14px 10px; border-top:1px solid var(--dsw-alias-border-l2); }
       .pm-logs-actions { display:flex; gap:8px; padding-top:8px; }
       .pm-logs-button { padding:2px 10px; border:1px solid var(--dsw-alias-border-l2); border-radius:6px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-secondary); font:inherit; font-size:11px; line-height:16px; cursor:pointer; }

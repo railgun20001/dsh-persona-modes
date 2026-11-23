@@ -122,8 +122,70 @@ function timeoutSignal(ms) {
 }
 
 /**
- * 创建一个计数客户端。
+ * 判断一个错误是不是「请求超时」。
  *
+ * undici 的超时以 `TimeoutError` 抛出，手动中止是 `AbortError`；统计路径没有
+ * 手动中止，两者都按超时处理。超时的原因（第三方变慢、没走代理）与处理建议
+ * 都依赖这个判断，给它一个统一的出口。
+ *
+ * @param {unknown} error 错误值。
+ * @returns {boolean} 是否超时。
+ */
+export function isTimeoutError(error) {
+  return error !== null && typeof error === 'object'
+    && (error.name === 'TimeoutError' || error.name === 'AbortError')
+}
+
+/**
+ * 把一次读取里的失败汇总成尽量少的日志条目。
+ *
+ * 15 个键同时超时会一次产出 15 条一模一样的记录，把 50 条的上限瞬间吃掉；
+ * 这里按「一个键失败就记细节，多个键失败就记一条汇总 + 样本 id」处理。
+ * 全部超时的主消息带上超时阈值（读日志的人第一反应是「超时是多少秒」），
+ * 成因猜测只进 hint：第三方变慢与代理问题在面板上无法区分，别把猜测当结论。
+ *
+ * @param {Array<{ id: string, error: unknown }>} list 失败明细。
+ * @param {number} ok 成功的条数。
+ * @param {(scope: string, error: unknown, detail?: unknown) => void} record 写日志的函数（createUsage 内部的 report）。
+ */
+function reportReadFailures(list, ok, record) {
+  if (list.length === 0) return
+  if (list.length === 1) {
+    record('usage.read', list[0].error, { id: list[0].id, host: USAGE_HOST })
+    return
+  }
+  const codes = [...new Set(list.map((item) => {
+    const itemError = item.error
+    if (typeof itemError?.name === 'string' && itemError.name !== '') return itemError.name
+    if (typeof itemError?.code === 'string' && itemError.code !== '') return itemError.code
+    return 'error'
+  }))]
+  const sample = list.slice(0, 3).map((item) => item.id).join(',')
+  const allTimeout = list.every((item) => isTimeoutError(item.error))
+  const message = allTimeout
+    ? `${list.length} 个人格数据读取超时（超过 ${USAGE_TIMEOUT_MS / 1_000} 秒）`
+    : `${list.length} 个人格数据读取失败（${codes.join('/')}）`
+  // 只报告「有没有配代理」，不读代理的具体值：日志不该带凭据。
+  const proxyConfigured = typeof process !== 'undefined'
+    && process.env !== undefined
+    && PROXY_ENV_NAMES.some((name) => typeof process.env[name] === 'string' && process.env[name] !== '')
+  record('usage.read', message, {
+    failed: list.length,
+    ok,
+    sample,
+    host: USAGE_HOST,
+    ...(allTimeout
+      ? {
+        hint: proxyConfigured
+          ? '已走代理仍超时：第三方可能变慢，或代理出口异常'
+          : '未配置 https_proxy，重启 DSH 后生效',
+      }
+      : {}),
+  })
+}
+
+/**
+ * 创建一个计数客户端。
  * @param {{
  *   fetch?: typeof fetch,
  *   now?: () => number,
@@ -291,51 +353,6 @@ export function createUsage(options = {}) {
   }
 
   /**
-   * 把一次读取里的失败汇总成尽量少的日志条目。
-   *
-   * 15 个键同时超时会一次产出 15 条一模一样的记录，把 50 条的上限瞬间吃掉；
-   * 这里按「一个键失败就记细节，多个键失败就记一条汇总 + 样本 id」处理，
-   * 并在全部超时时补一句排查方向（宿主没走系统代理是最常见的成因）。
-   *
-   * @param {Array<{ id: string, error: unknown }>} list 失败明细。
-   * @param {number} ok 成功的条数。
-   */
-  function reportReadFailures(list, ok) {
-    if (list.length === 0) return
-    if (list.length === 1) {
-      report('usage.read', list[0].error, { id: list[0].id, host: USAGE_HOST })
-      return
-    }
-    const codes = [...new Set(list.map((item) => {
-      const error = item.error
-      if (error !== null && typeof error === 'object') {
-        const named = /** @type {Record<string, unknown>} */ (error)
-        if (typeof named.name === 'string' && named.name !== '') return named.name
-        if (typeof named.code === 'string' && named.code !== '') return named.code
-      }
-      return 'error'
-    }))]
-    const sample = list.slice(0, 3).map((item) => item.id).join(',')
-    const allTimeout = codes.every((code) => code === 'TimeoutError' || code === 'AbortError')
-    const message = allTimeout
-      ? `${list.length} 个人格数据读取超时，宿主多半没走代理`
-      : `${list.length} 个人格数据读取失败（${codes.join('/')}）`
-    // 只报告「有没有配代理」，不读代理的具体值：日志不该带凭据。
-    const proxyConfigured = typeof process !== 'undefined'
-      && process.env !== undefined
-      && PROXY_ENV_NAMES.some((name) => typeof process.env[name] === 'string' && process.env[name] !== '')
-    report('usage.read', message, {
-      failed: list.length,
-      ok,
-      sample,
-      host: USAGE_HOST,
-      ...(allTimeout
-        ? { hint: proxyConfigured ? '已配置代理仍超时，检查代理端口' : '未配置 https_proxy，重启 DSH 后生效' }
-        : {}),
-    })
-  }
-
-  /**
    * 给一个人格记一轮对话。
    *
    * 这是 fire-and-forget 语义：失败返回 false，不抛错。调用方不需要 await。
@@ -361,7 +378,12 @@ export function createUsage(options = {}) {
       return true
     } catch (error) {
       // 上报失败过去是静默的；现在留一条记录，便于在设置页底部查看。
-      report('usage.record', error, { id })
+      // 超时是最常见的失败，原始错误是英文长句，换成带阈值的中文文案更好读。
+      if (isTimeoutError(error)) {
+        report('usage.record', `上报超时（超过 ${USAGE_TIMEOUT_MS / 1_000} 秒）`, { id, host: USAGE_HOST })
+      } else {
+        report('usage.record', error, { id, host: USAGE_HOST })
+      }
       noteFailure(typeof error?.status === 'number' ? error.status : 0)
       return false
     }
@@ -450,11 +472,11 @@ export function createUsage(options = {}) {
 
       if (ok === 0) {
         noteFailure(limited ? 429 : 0)
-        reportReadFailures(failuresList, 0)
+        reportReadFailures(failuresList, 0, report)
         return cache === null ? null : { counts: { ...cache.counts }, at: cache.at, partial: true }
       }
 
-      if (failed > 0) reportReadFailures(failuresList, ok)
+      if (failed > 0) reportReadFailures(failuresList, ok, report)
       if (limited) noteFailure(429)
       else failures = 0
       const result = { counts, at: now(), partial: failed > 0 }

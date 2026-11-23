@@ -393,32 +393,71 @@ test('日志对象自己抛错也不影响计数', async () => {
   assert.equal(await usage.record('catgirl'), true)
 })
 
-test('多个键同时超时只写一条汇总日志，并给出排查方向', async () => {
+test('上报超时记中文文案并带阈值', async () => {
   const journal = { records: [], notes: [], record(scope, error, detail) { this.records.push({ scope, error, detail }) }, note() {} }
   const timeout = () => {
     const error = new Error('The operation was aborted due to timeout')
     error.name = 'TimeoutError'
     return error
   }
-  const fake = {
-    async fetch() {
-      throw timeout()
-    },
-  }
+  const fake = { async fetch() { throw timeout() } }
   const usage = createUsage({ fetch: fake.fetch, enabled: true, journal })
-  const result = await usage.read(['catgirl', 'mom', 'sharp', 'tiga'])
-
-  assert.equal(result, null, '全部失败且无缓存时返回 null')
-  const readEntries = journal.records.filter((entry) => entry.scope === 'usage.read')
-  assert.equal(readEntries.length, 1, '四个键失败只记一条')
-  assert.match(readEntries[0].error, /4 个人格数据读取超时/u)
-  assert.equal(readEntries[0].detail.failed, 4)
-  assert.equal(readEntries[0].detail.sample, 'catgirl,mom,sharp')
-  assert.equal(readEntries[0].detail.host, 'abacus.jasoncameron.dev')
-  assert.match(readEntries[0].detail.hint, /https_proxy|代理端口/u)
+  assert.equal(await usage.record('whale'), false)
+  assert.equal(journal.records.length, 1, '连续失败前只记一条')
+  assert.match(journal.records[0].error, /上报超时（超过 4 秒）/u)
+  assert.equal(journal.records[0].detail.id, 'whale')
+  assert.equal(journal.records[0].detail.host, 'abacus.jasoncameron.dev')
 })
 
-test('status 暴露缓存与熔断状态', async () => {  const fake = fakeFetch(() => jsonResponse({ value: 1 }))
+test('多个键同时超时只写一条汇总日志，并给出排查方向', async () => {
+  const names = ['https_proxy', 'HTTPS_PROXY', 'http_proxy', 'HTTP_PROXY', 'all_proxy', 'ALL_PROXY']
+  // 代理环境变量会影响提示文案：保存现场，测完恢复，测试不依赖宿主机配置。
+  const saved = Object.fromEntries(names.map((name) => [name, process.env[name]]))
+  try {
+    for (const name of names) delete process.env[name]
+    const journal = { records: [], notes: [], record(scope, error, detail) { this.records.push({ scope, error, detail }) }, note() {} }
+    const timeout = () => {
+      const error = new Error('The operation was aborted due to timeout')
+      error.name = 'TimeoutError'
+      return error
+    }
+    const fake = {
+      async fetch() {
+        throw timeout()
+      },
+    }
+    let usage = createUsage({ fetch: fake.fetch, enabled: true, journal })
+    let result = await usage.read(['catgirl', 'mom', 'sharp', 'tiga'])
+
+    assert.equal(result, null, '全部失败且无缓存时返回 null')
+    let readEntries = journal.records.filter((entry) => entry.scope === 'usage.read')
+    assert.equal(readEntries.length, 1, '四个键失败只记一条')
+    assert.match(readEntries[0].error, /4 个人格数据读取超时（超过 4 秒）/u)
+    assert.equal(readEntries[0].detail.failed, 4)
+    assert.equal(readEntries[0].detail.sample, 'catgirl,mom,sharp')
+    assert.equal(readEntries[0].detail.host, 'abacus.jasoncameron.dev')
+    assert.match(readEntries[0].detail.hint, /未配置 https_proxy/u)
+
+    // 配了代理时文案换成另一种提示，不带「未配置」的误导。
+    process.env.https_proxy = 'http://127.0.0.1:7890'
+    journal.records.length = 0
+    usage = createUsage({ fetch: fake.fetch, enabled: true, journal })
+    result = await usage.read(['catgirl', 'mom', 'sharp', 'tiga'])
+    assert.equal(result, null)
+    readEntries = journal.records.filter((entry) => entry.scope === 'usage.read')
+    assert.equal(readEntries.length, 1)
+    assert.match(readEntries[0].detail.hint, /已走代理仍超时/u)
+    assert.ok(!readEntries[0].detail.hint.includes('未配置'))
+  } finally {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  }
+})
+
+test('status 暴露缓存与熔断状态', async () => {
+  const fake = fakeFetch(() => jsonResponse({ value: 1 }))
   const usage = createUsage({ fetch: fake.fetch, enabled: true })
   assert.deepEqual(usage.status(), { enabled: true, cachedAt: null, breakerOpenUntil: null })
   await usage.read(['catgirl'])

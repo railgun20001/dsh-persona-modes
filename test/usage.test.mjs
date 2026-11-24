@@ -406,12 +406,12 @@ test('上报超时记中文文案并带阈值', async () => {
   const usage = createUsage({ fetch: fake.fetch, enabled: true, journal })
   assert.equal(await usage.record('whale'), false)
   assert.equal(journal.records.length, 1, '连续失败前只记一条')
-  assert.match(journal.records[0].error, /上报超时（超过 4 秒）/u)
+  assert.match(journal.records[0].error, /上报超时（超过 8 秒）/u)
   assert.equal(journal.records[0].detail.id, 'whale')
   assert.equal(journal.records[0].detail.host, 'abacus.jasoncameron.dev')
 })
 
-test('read 使用独立的 8 秒读取超时，record 仍是 4 秒', async () => {
+test('read 与 record 的超时同为 8 秒', async () => {
   // AbortSignal.timeout 不暴露毫秒数；拦下它记录入参，验证两条路径的接线。
   const original = AbortSignal.timeout
   const seen = []

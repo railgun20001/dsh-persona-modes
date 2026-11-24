@@ -436,6 +436,10 @@ export function createUsage(options = {}) {
     if (inflightRead !== null) return inflightRead
 
     const pending = (async () => {
+      // 读取的结论（成功/失败）要等批请求全部结束才落笔，慢时每批要等满
+      // 8 秒超时；先留一条开始痕迹，日志面板才不会在这段真空期里显得
+      // 「点了刷新却什么都没发生」。
+      trace('usage.read', '开始读取', { ids: wanted.length, refresh: skipCache })
       /** @type {Record<string, number>} */
       const counts = {}
       let ok = 0

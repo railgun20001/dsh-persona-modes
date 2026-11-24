@@ -1497,11 +1497,20 @@ window.__ModuleLoader__.load({
         if (view.phase !== 'ready' || view.data?.usage?.fetch !== true) return
         if (countsState === 'loading' || usagePending) return
         setCountsState('loading')
+        // 调试打开时在刷新的开始与结束各同步拉一次日志面板：读取期间能看到
+        // 「开始读取」，结束后成功/失败的条目立刻出现，不再停留在旧快照上
+        // 被误读成「什么都没记」。日志在宿主内存里，多拉一次只是本地往返。
+        const pullLogs = () => {
+          if (view.data?.debug === true) void refreshLogs()
+        }
+        pullLogs()
         try {
           applyUsageResponse(await postRoute('usage', { refresh: true }, { timeoutMs: USAGE_REFRESH_TIMEOUT_MS }))
         } catch {
           setCountsState('error')
           scheduleUsageRetry(null)
+        } finally {
+          pullLogs()
         }
       }
 

@@ -375,6 +375,14 @@ test('失败的读取与上报都写进运行日志，不再静默', async () =>
   assert.equal(readFailures.length, 1)
   assert.equal(readFailures[0].detail.id, 'mom')
 
+  // 读取开始就留下流程记录：慢第三方要等批请求结束才有结论，这段真空期
+  // 面板靠「开始读取」看出读取确实在进行，而不是「什么都没发生」。
+  const startedNote = journal.notes.find((entry) => entry.message === '开始读取')
+  assert.ok(startedNote, '读取开始应写一条流程记录')
+  assert.equal(startedNote.scope, 'usage.read')
+  assert.equal(startedNote.detail.ids, 2)
+  assert.equal(startedNote.detail.refresh, false)
+
   // 成功路径只在 debug 打开时留下 note。
   assert.ok(journal.notes.some((entry) => entry.scope === 'usage.read'))
 })

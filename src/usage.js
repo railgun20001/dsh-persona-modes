@@ -210,7 +210,7 @@ function reportReadFailures(list, ok, record) {
  *   sleep?: (ms: number) => Promise<void>,
  *   journal?: { record: (scope: string, error: unknown, detail?: unknown) => unknown, note: (scope: string, message: unknown, detail?: unknown) => unknown },
  * }} [options] 注入项；测试用假 fetch、假时钟与假 sleep，绝不访问真实服务。
- *   `journal` 是运行错误日志：失败必须留下记录，不再静默。
+ *   `journal` 是调试日志：失败必须留下记录，成功与流程细节在调试打开时也记录。
  * @returns {{
  *   record: (id: string) => Promise<boolean>,
  *   read: (ids: string[], settings?: { refresh?: boolean }) => Promise<{ counts: Record<string, number>, at: number, partial: boolean } | null>,

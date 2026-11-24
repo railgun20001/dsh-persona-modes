@@ -173,8 +173,8 @@ export function buildStatePayload(store, version) {
  * - `POST /dsh-persona-modes/state`：读取当前模式、全部模式与自定义模板；
  * - `POST /dsh-persona-modes/usage`：读取各人格累计对话轮次（仅当「显示统计」开启）；
  * - `POST /dsh-persona-modes/usage/prefs`：更新统计开关，body `{ "report"?: boolean, "fetch"?: boolean }`；
- * - `POST /dsh-persona-modes/logs`：读取运行错误日志（内存、有上限、不落盘）；
- * - `POST /dsh-persona-modes/logs/clear`：清空运行错误日志；
+ * - `POST /dsh-persona-modes/logs`：读取调试日志（内存、有上限、不落盘）；
+ * - `POST /dsh-persona-modes/logs/clear`：清空调试日志；
  * - `POST /dsh-persona-modes/logs/debug`：设置 debug 开关，body `{ "value": boolean }`；
  * - `POST /dsh-persona-modes/select`：切换模式，body `{ "id": "catgirl" }`；
  * - `POST /dsh-persona-modes/intensity`：切换全局语气强度，body `{ "value": "low|medium|high" }`；
@@ -185,7 +185,7 @@ export function buildStatePayload(store, version) {
  *
  * @param {object} store 模式存储。
  * @param {{ version?: string, diagnostics?: () => Promise<object>, usage?: object, errors?: object }} [options]
- *   版本信息、诊断回调、计数客户端与运行错误日志。
+ *   版本信息、诊断回调、计数客户端与调试日志。
  * @returns {(req: object, res: object) => void} node:http 处理器。
  */
 export function createRouteHandler(store, options = {}) {

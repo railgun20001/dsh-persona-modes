@@ -83,9 +83,9 @@ window.__ModuleLoader__.load({
       usageLoading: '正在读取统计…',
       usageUnavailable: '统计暂时不可用。',
       usageSaveFailed: '统计设置保存失败。',
-      logsTitle: '运行错误',
+      logsTitle: '调试日志',
       logsCount: '{count} 条',
-      logsEmpty: '暂无错误记录。',
+      logsEmpty: '暂无日志记录。',
       logsHint: '只保留在内存里最近 {limit} 条，不写磁盘、不缓存；重启即清空。',
       logsDropped: '更早的 {count} 条已丢弃',
       logsRefresh: '刷新',
@@ -93,7 +93,7 @@ window.__ModuleLoader__.load({
       logsLoading: '正在读取…',
       logsFailed: '读取失败。',
       debugTitle: '调试',
-      debugHint: '打开后，设置页底部会显示「运行错误」面板，并在其中额外记录流程细节与错误堆栈，便于排查；默认关闭。',
+      debugHint: '打开后，设置页底部会显示「调试日志」面板，记录成功与失败的流程细节（含错误堆栈），便于排查；默认关闭。',
       debugFailed: '调试开关保存失败。',
       edit: '编辑',
       createCustom: '新建自定义人格',
@@ -163,9 +163,9 @@ window.__ModuleLoader__.load({
       usageLoading: 'Loading stats…',
       usageUnavailable: 'Stats are temporarily unavailable.',
       usageSaveFailed: 'Could not save stats settings.',
-      logsTitle: 'Runtime errors',
+      logsTitle: 'Debug log',
       logsCount: '{count}',
-      logsEmpty: 'No errors recorded.',
+      logsEmpty: 'No entries yet.',
       logsHint: 'Keeps the latest {limit} entries in memory only — nothing is written to disk or cached; cleared on restart.',
       logsDropped: '{count} earlier entries dropped',
       logsRefresh: 'Refresh',
@@ -173,7 +173,7 @@ window.__ModuleLoader__.load({
       logsLoading: 'Loading…',
       logsFailed: 'Could not load.',
       debugTitle: 'Debug',
-      debugHint: 'When on, the settings page shows a “Runtime errors” panel at the bottom and also records flow details and error stacks there. Off by default.',
+      debugHint: 'When on, the settings page shows a “Debug log” panel at the bottom, recording both successful and failed flow details (plus error stacks). Off by default.',
       debugFailed: 'Could not save the debug switch.',
       edit: 'Edit',
       createCustom: 'New custom persona',
@@ -312,7 +312,7 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 把宿主返回的运行错误日志筛成可渲染的形状。
+     * 把宿主返回的调试日志筛成可渲染的形状。
      *
      * 只认字符串字段，且条数不超过宿主声明的上限：日志面板不信任远端数据，
      * 免得一条畸形记录把页面撑破。
@@ -738,7 +738,7 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 运行错误面板：默认折叠，位于设置页最底部。
+     * 调试日志面板：默认折叠，位于设置页最底部。
      *
      * 只在 debug 打开时挂载（由上层决定），因此这里不再解释开关在哪。
      * 折叠时不渲染列表，只在标题上显示条数；展开时才向宿主读日志（日志本身在
@@ -747,14 +747,14 @@ window.__ModuleLoader__.load({
      * @param {object} props 组件属性；`defaultOpen` 只为测试与后续复用准备。
      * @returns {object} React 元素。
      */
-    function RunErrors({ t, logs, state, error, onRefresh, onClear, defaultOpen }) {
+    function DebugLog({ t, logs, state, error, onRefresh, onClear, defaultOpen }) {
       const [open, setOpen] = react.useState(defaultOpen === true)
       const entries = logs?.entries ?? []
       const count = entries.length
       const toggle = () => {
         const next = !open
         setOpen(next)
-        // 展开时读一次：折叠期间日志可能又攒了新错误。
+        // 展开时读一次：折叠期间日志可能又攒了新条目。
         if (next && typeof onRefresh === 'function') onRefresh()
       }
       return h(
@@ -1274,9 +1274,9 @@ window.__ModuleLoader__.load({
           onRefresh: onRefreshCounts,
           cooldown: usageRetryPending === true,
         }),
-        // 运行错误只在调试打开时出现：它默认折叠，且不开调试时不该占版面。
+        // 调试日志只在调试打开时出现：它默认折叠，且不开调试时不该占版面。
         debug === true
-          ? h(RunErrors, {
+          ? h(DebugLog, {
               t,
               logs,
               state: logsState ?? 'idle',
@@ -1315,7 +1315,7 @@ window.__ModuleLoader__.load({
       const [logsError, setLogsError] = react.useState(null)
 
       /**
-       * 读一次运行错误日志。
+       * 读一次调试日志。
        *
        * 日志在宿主内存里，读它只是本地往返，不打第三方；展开面板或点「刷新」
        * 时调用，让折叠标题上的条数和列表内容保持一致。
@@ -1994,7 +1994,7 @@ window.__ModuleLoader__.load({
       NS,
       SECTION_ORDER,
       PersonaView,
-      RunErrors,
+      DebugLog,
       DebugSection,
       normalizePayload,
       normalizeCounts,

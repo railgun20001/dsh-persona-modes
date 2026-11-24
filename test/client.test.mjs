@@ -681,8 +681,8 @@ assert.deepEqual(
   { report: true, fetch: true },
 )
 
-// ── 运行错误面板 ────────────────────────────────────────────────────────────
-const { RunErrors, DebugSection, normalizeLogs, formatTime } = globalThis.__personaExports.__test
+// ── 调试日志面板 ────────────────────────────────────────────────────────────
+const { DebugLog, DebugSection, normalizeLogs, formatTime } = globalThis.__personaExports.__test
 
 const logPayload = {
   ok: true,
@@ -708,7 +708,7 @@ assert.equal(formatTime(new Date(2026, 10, 23, 15, 4, 5).getTime()), '15:04:05')
 
 // 折叠态：只有标题与条数，不渲染列表；点标题会去刷新。
 let logRefresh = 0
-const collapsed = RunErrors({
+const collapsed = DebugLog({
   t,
   logs: normalizedLogs,
   state: 'ready',
@@ -719,7 +719,7 @@ const collapsed = RunErrors({
   onClear: () => {},
 })
 const collapsedFlat = flatten(collapsed)
-assert.ok(textOf(collapsed).includes('运行错误'))
+assert.ok(textOf(collapsed).includes('调试日志'))
 assert.ok(textOf(collapsed).includes('3 条'))
 assert.equal(
   collapsedFlat.filter((node) => node.props?.className === 'pm-logs-list').length,
@@ -733,7 +733,7 @@ head.props.onClick()
 assert.equal(logRefresh, 1, '展开时应触发一次刷新')
 
 // 展开态：渲染每一条，并显示条数上限说明。
-const expanded = RunErrors({
+const expanded = DebugLog({
   t,
   logs: normalizedLogs,
   state: 'ready',
@@ -751,8 +751,8 @@ assert.ok(expandedText.includes('最近 50 条'))
 assert.ok(expandedText.includes('更早的 2 条已丢弃'))
 assert.ok(expandedText.includes('×4'), '合并计数应显示为 ×N')
 
-// 空日志：显示「暂无错误记录」。
-const empty = RunErrors({
+// 空日志：显示「暂无日志记录」。
+const empty = DebugLog({
   t,
   logs: { entries: [], dropped: 0, limit: 50 },
   state: 'ready',
@@ -761,7 +761,7 @@ const empty = RunErrors({
   onClear: () => {},
   defaultOpen: true,
 })
-assert.ok(textOf(empty).includes('暂无错误记录'))
+assert.ok(textOf(empty).includes('暂无日志记录'))
 
 // ── 面板只在调试打开时出现 ──────────────────────────────────────────────────
 const quietView = PersonaView({
@@ -784,9 +784,9 @@ const quietView = PersonaView({
 assert.equal(
   flatten(quietView).filter((node) => node.props?.className === 'pm-logs').length,
   0,
-  '调试关闭时不应渲染运行错误面板',
+  '调试关闭时不应渲染调试日志面板',
 )
-assert.ok(!textOf(quietView).includes('运行错误'))
+assert.ok(!textOf(quietView).includes('调试日志'))
 
 const debugView = PersonaView({
   t,
@@ -810,9 +810,9 @@ const debugView = PersonaView({
 const debugFlat = flatten(debugView)
 const logsIndex = debugFlat.findIndex((node) => node.props?.className === 'pm-logs')
 const usageIndexDebug = debugFlat.findIndex((node) => node.props?.className === 'pm-usage')
-assert.ok(logsIndex > 0, '调试打开时应渲染运行错误面板')
-assert.ok(logsIndex > usageIndexDebug, '运行错误面板应排在统计设置条之后')
-assert.ok(textOf(debugView).includes('运行错误'))
+assert.ok(logsIndex > 0, '调试打开时应渲染调试日志面板')
+assert.ok(logsIndex > usageIndexDebug, '调试日志面板应排在统计设置条之后')
+assert.ok(textOf(debugView).includes('调试日志'))
 assert.ok(textOf(debugView).includes('3 条'))
 
 // ── 插件详情页的调试区块 ────────────────────────────────────────────────────

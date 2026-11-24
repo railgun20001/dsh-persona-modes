@@ -89,8 +89,8 @@ export function commandHelp(activeId, state = {}) {
  * @param {{ defaultMode?: string, command?: boolean, stateFile?: string }} [config] 插件行配置。
  */
 export function apply(ctx, config = {}) {
-  // 运行错误日志：只在内存、有上限、不落盘。默认只收错误；`state.debug` 打开后
-  // 额外收流程细节。设置页底部可以查看，插件详情页可以切开关。
+  // 调试日志：只在内存、有上限、不落盘。默认只收错误；`state.debug` 打开后
+  // 额外收流程细节（含读取/上报成功）。设置页底部可以查看，插件详情页可以切开关。
   const errors = createErrorLog()
 
   const store = createStore({

@@ -297,7 +297,7 @@ function newCustomId(customModes) {
  * 降级状态告诉客户端。
  *
  * @param {{ file?: string, defaultMode?: string, journal?: { record: (scope: string, error: unknown, detail?: unknown) => unknown } }} [options] 存储选项。
- *   `journal` 是运行错误日志：写盘失败过去只反映在 `persisted` 里，现在同时留记录。
+ *   `journal` 是调试日志：写盘失败过去只反映在 `persisted` 里，现在同时留记录。
  * @returns {object} 存储对象。
  */
 export function createStore(options = {}) {

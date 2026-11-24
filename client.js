@@ -1479,9 +1479,9 @@ window.__ModuleLoader__.load({
           return
         }
         if (typeof data?.fetchedAt !== 'number') {
-          // 第三方整体读取失败：角标隐藏，但在设置条上给出可见提示，
-          // 避免「什么都没有」被误读成「没人用过」。随后自动重试自愈。
-          setCounts(null)
+          // 第三方整体读取失败：保留页面上已有的数字——超时/失败只说明
+          // 「这次没读到」，不代表热度消失，清空会被误读成「没人用过」。
+          // 只把设置条置为「统计暂时不可用」，随后自动重试自愈。
           setCountsState('error')
           scheduleUsageRetry(data)
           return

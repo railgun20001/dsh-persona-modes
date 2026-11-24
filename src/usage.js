@@ -415,6 +415,10 @@ export function createUsage(options = {}) {
    * 检查，但熔断与令牌桶仍然生效。人格数量超过桶容量时自动分批限速，
    * 任意 10 秒窗口内的请求数不会超过桶容量，只是读得慢一些。
    *
+   * 失败不清空已有数据：整批失败时沿用旧缓存；部分失败时失败的那几个键
+   * 沿用上一次的旧计数（`partial` 置真、缓存按短 TTL 尽快补齐）。键在
+   * 第三方真实不存在（404）不算失败，不会被旧值复活。
+   *
    * @param {string[]} ids 人格 id 列表。
    * @param {{ refresh?: boolean }} [settings] 读取选项。
    * @returns {Promise<{ counts: Record<string, number>, at: number, partial: boolean } | null>} 读取结果。
@@ -501,10 +505,27 @@ export function createUsage(options = {}) {
       if (failed > 0) reportReadFailures(failuresList, ok, report)
       if (limited) noteFailure(429)
       else failures = 0
-      const result = { counts, at: now(), partial: failed > 0 }
-      trace('usage.read', '读取完成', { ok, failed, ids: wanted.length })
-      // 部分成功也缓存，但 TTL 更短：角标能立刻显示，失败的那几个键下次尽快补齐。
-      cache = { counts: { ...counts }, at: result.at, partial: result.partial }
+      // 失败的键沿用上一次的旧计数：超时/失败只说明「这次没读到」，不代表
+      // 热度消失，把旧值丢掉会让角标凭空消失、被误读成「没人用过」。
+      // 404（键在第三方真实不存在）不进失败列表，不会被旧值复活。
+      const stale = {}
+      if (failed > 0 && cache !== null) {
+        for (const item of failuresList) {
+          const previous = cache.counts[item.id]
+          if (typeof previous === 'number') stale[item.id] = previous
+        }
+      }
+      const merged = { ...stale, ...counts }
+      const result = { counts: merged, at: now(), partial: failed > 0 }
+      trace('usage.read', '读取完成', {
+        ok,
+        failed,
+        ...(failed > 0 ? { stale: Object.keys(stale).length } : {}),
+        ids: wanted.length,
+      })
+      // 部分成功也缓存（失败键的旧值已并入），但 TTL 更短：角标全部保留，
+      // 失败的那几个键下次尽快用真值补齐。
+      cache = { counts: { ...merged }, at: result.at, partial: result.partial }
       return result
     })()
 

@@ -278,6 +278,48 @@ test('read 全部失败时返回 null（无缓存）', async () => {
   assert.equal(await usage.read(['catgirl']), null)
 })
 
+test('读取失败不清空已有数据：部分失败沿用旧值，404 不复活，整批失败回旧缓存', async () => {
+  const time = clock()
+  let momMode = 'ok'
+  let allFail = false
+  const fake = fakeFetch((url) => {
+    if (allFail) throw new Error('offline')
+    if (!url.endsWith('/mom')) return jsonResponse({ value: 12 })
+    if (momMode === 'fail') return jsonResponse({ error: 'boom' }, 500)
+    if (momMode === 'gone') return jsonResponse({ error: 'Key not found' }, 404)
+    return jsonResponse({ value: 34 })
+  })
+  const usage = createUsage({ fetch: fake.fetch, now: time.now, enabled: true })
+
+  // 第一次全成功，建立缓存：catgirl=12、mom=34。
+  const first = await usage.read(['catgirl', 'mom'])
+  assert.deepEqual(first.counts, { catgirl: 12, mom: 34 })
+  assert.equal(first.partial, false)
+
+  // 第二次 mom 失败：mom 不能从结果里消失，沿用上一次的 34。
+  momMode = 'fail'
+  const second = await usage.read(['catgirl', 'mom'], { refresh: true })
+  assert.equal(second.partial, true)
+  assert.deepEqual(second.counts, { catgirl: 12, mom: 34 }, '失败的键应沿用上一次的计数')
+
+  // 部分失败的结果也进缓存：短 TTL 内非刷新读取同样带上旧值。
+  const cachedSecond = await usage.read(['catgirl', 'mom'])
+  assert.deepEqual(cachedSecond.counts, { catgirl: 12, mom: 34 })
+
+  // 第三次 mom 变 404（键在第三方真实不存在）：不算失败，不被旧值复活。
+  momMode = 'gone'
+  const third = await usage.read(['catgirl', 'mom'], { refresh: true })
+  assert.equal(third.partial, false)
+  assert.deepEqual(third.counts, { catgirl: 12 }, '404 的键不应被旧值复活')
+
+  // 第四次整批失败：回退旧缓存，而不是清空。
+  allFail = true
+  const fourth = await usage.read(['catgirl', 'mom'], { refresh: true })
+  assert.equal(fourth.partial, true)
+  assert.deepEqual(fourth.counts, { catgirl: 12 }, '整批失败应返回旧缓存而不是空')
+  assert.equal(fourth.at, third.at, '整批失败时沿用旧缓存的时间戳')
+})
+
 test('超大响应被拒绝', async () => {
   const huge = 'x'.repeat(USAGE_MAX_BODY + 1)
   const fake = fakeFetch(() => ({

@@ -162,6 +162,14 @@ assert.equal(section.options.label(), '人格模式')
 
 assert.ok(runResult.styleText.includes('.pm-card'), '样式没有注入')
 assert.ok(runResult.styleText.includes('--dsw-alias-'), '样式没有使用主题令牌')
+// 宿主设置面板的 .options 是 overflow-y:auto 的滚动容器，其 overflow-x 会被算成 auto，
+// 而宿主没有全局 box-sizing:border-box 重置。根节点宽度 100% 若用 content-box，左右各 4px
+// 内边距会把内容撑宽 8px，设置页底部因此冒出横向滚动条（2026-11-25 实测复现）。
+assert.match(
+  runResult.styleText,
+  /\.pm-root\s*\{[^}]*box-sizing:border-box/,
+  '.pm-root 缺少 box-sizing:border-box，宽度 100% 加内边距会撑出横向滚动条',
+)
 
 // 插件详情页的调试区块也注册了，且 key 指向本包。
 const detailSection = runResult.registered.find((entry) => entry.options.name === 'plugins.detail.section')

@@ -1794,7 +1794,10 @@ window.__ModuleLoader__.load({
 
     /** 注入到页面的样式；只使用 `--dsw-alias-*` 主题令牌，跟随深浅色。 */
     const CSS = `
-      .pm-root { display:flex; flex-direction:column; gap:16px; width:100%; padding:4px 4px 24px; color:var(--dsw-alias-label-primary); font-size:14px; line-height:22px; }
+      /* 宿主设置面板的 .options 是 overflow-y:auto 的滚动容器，且全局没有 border-box
+         重置；根节点宽度 100% 时必须自带 border-box，否则左右 4px 内边距会把内容
+         撑宽 8px，让设置页底部冒出横向滚动条。 */
+      .pm-root { box-sizing:border-box; display:flex; flex-direction:column; gap:16px; width:100%; padding:4px 4px 24px; color:var(--dsw-alias-label-primary); font-size:14px; line-height:22px; }
       .pm-hero { display:flex; align-items:flex-start; gap:12px; }
       .pm-hero-icon { display:grid; place-items:center; flex:0 0 auto; width:44px; height:44px; border-radius:12px; background:var(--dsw-alias-bg-layer-2); font-size:24px; line-height:1; }
       .pm-hero-copy { min-width:0; }

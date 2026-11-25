@@ -5,6 +5,7 @@
 ## 2026-11-25
 
 - 舔狗默认自称由「狗狗」改为「我」——用户要求：卑微交给语气、神态与动作去演，不再用「狗狗」这类第三人称自贬。称呼「哥哥」不变，标签与 `吹捧只在语气` 护栏不变；`renderPersonaPrompt('simp')` 低/中/高档由 140 / 161 / 214 变为 139 / 160 / 213 字，仍在 111–160 / 132–181 / 185–234 字范围内；已保存过自定义覆盖值的用户不受影响（覆盖值优先）。离线测试 117 项全部通过。
+- 修复设置页的横向滚动条：宿主设置面板的 `.options` 是 `overflow-y:auto` 的滚动容器（`overflow-x` 因此按规范算成 `auto`），而 DSH 前端没有全局 `box-sizing` 重置；人格模式根节点 `.pm-root` 用 `width:100%` 叠加左右各 4px 内边距，在 content-box 下把内容撑宽 8px，整个设置页底部因此出现横向滚动条。给 `.pm-root` 显式声明 `box-sizing:border-box` 后修复。验证方式：从 `app.asar` 解出真实前端样式（`@deepseek-ai/dsh-web-frontend` 的全局 CSS 与 `SettingsRoot.module.css` 的面板尺寸），在 Chromium 里复现同一面板结构——修复前 `.options` 的 `scrollWidth 620 / clientWidth 612`，修复后两侧均为 612；320px 窄屏全屏面板同样 0 溢出。`test/client.test.mjs` 增加一条 `.pm-root` 必须声明 `border-box` 的样式回归断言，离线测试 117 项全部通过。
 
 ## 2026-11-24
 

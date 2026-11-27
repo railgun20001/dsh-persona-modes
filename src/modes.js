@@ -146,6 +146,68 @@ export function intensityTags(value) {
 }
 
 /**
+ * 把口癖词表渲染成要注入的行。
+ *
+ * 返回零行、两行或一条词表行加一条频率约束行：
+ *
+ * - 低档或没有词表时返回空数组，不改动注入文本；
+ * - 其余档位返回 `口癖：词1；词2…`，紧跟 {@link LEXICON_FREQUENCY_TEXT}。
+ *
+ * 词条之间用「；」而不是「、」分隔：词条自己经常就带顿号（`最直白、最不绕弯`），
+ * 用顿号当分隔符会读成一条长串，模型也就分不清哪几个是可单用的口癖。
+ *
+ * @param {unknown} lexicon 人格上的词表（字符串数组）。
+ * @param {unknown} intensity 强度值。
+ * @param {boolean} [enabled] 是否允许追加（提示词被用户覆盖时为 false）。
+ * @returns {Array<string>} 需要追加的行。
+ */
+export function lexiconLines(lexicon, intensity, enabled = true) {
+  if (enabled === false) return []
+  const list = Array.isArray(lexicon)
+    ? lexicon.filter((item) => typeof item === 'string' && item.trim() !== '')
+    : []
+  if (list.length === 0) return []
+  const count = LEXICON_COUNTS[normalizeIntensity(intensity)]
+  if (!(count > 0)) return []
+  const picked = list.slice(0, count).map((item) => item.trim())
+  return [`口癖：${picked.join('；')}`, LEXICON_FREQUENCY_TEXT]
+}
+
+/**
+ * 口癖词表在各强度档位下的注入条数。
+ *
+ * 标签块擅长描述「性格」，却点名不到「具体句子」：`开口爱排比` 只说明要排比，
+ * 模型会拿自己的高频表达（「简单说」「总的来说」）填坑，吐不出某个角色的
+ * 固定句式。要命中字面，只能在上下文里给出**词本身**，这就是口癖词表的由来。
+ *
+ * 词表仍按档位逐层开放，与 `可用层次` 同一套思路：
+ *
+ * - 低档 0 条：低档是长文与代码任务的默认档，一个字都不多花；
+ * - 中档前 2 条：够开个头，不至于成套输出；
+ * - 高档全量：演出档才把整份词表摆上来。
+ *
+ * 词条是**词与短语**，不是台词或示例对话——给词表不等于给剧本，模型不会因此
+ * 把整段模仿当成事实来源，也守住了本模块「不写角色卡、不写示例对话」的底线。
+ */
+export const LEXICON_COUNTS = {
+  low: 0,
+  medium: 2,
+  high: Number.POSITIVE_INFINITY,
+}
+
+/**
+ * 口癖频率约束行。
+ *
+ * 词表一长，模型最容易犯的错不是「不用」，而是「每段都堆一串」——排比连着排比，
+ * 一张口就是一整套「最直白、最不绕弯、最硬核」，技术轮直接被话术淹没。所以词表
+ * 落地的同时必须紧跟一条频率约束：一次只用一句，且不强制使用。
+ *
+ * 写法刻意避开「每段至少一次」这类打卡式要求（与语气强度标签的设计约束一致），
+ * 用「可不用」给模型留出不用的余地。
+ */
+export const LEXICON_FREQUENCY_TEXT = '口癖频率：一次一句，可不用'
+
+/**
  * 新建自定义人格时使用的默认值。
  *
  * 客户端把这份模板填进「新建」表单；宿主在保存时也用它补齐缺失字段。它不参与
@@ -549,16 +611,21 @@ DeepSeek同人娘化
   // 有四层：① 甜妹口吻、态度极好（`甜妹口吻` / `态度极好`）；② 开口先接情绪
   // （`先共情再回答`，对应「抱抱你~先喝口水缓缓」这类先共情后建议的反应顺序）；
   // ③ 爱撒娇、赞美不断（`爱撒娇` / `嘴甜赞美多`）；④ 被玩成梗的「豆包体」开场白
-  // ——「不绕弯子、最直接、最硬核」那串排比与「最」字（`开口爱排比` / `满嘴最字`），
-  // 再加一个梗本身的说法 `豆里豆气` 当辨识锚点。
+  // ——那串「最直白、最不绕弯」的排比，另加 `开口爱排比` 描述结构、`豆里豆气`
+  // 当辨识锚点。
   // 另一条同样出名的是「秒速认错、下次还敢」：这里只取认错的姿态，不取「下次还敢」
   // 的糊弄。人格级护栏 `认错照样改对` 与病娇的 `危险只在语气`、蠢萌的
   // `犯蠢只在语气`、舔狗的 `吹捧只在语气` 同类，把道歉留在语气层——认错要认，
   // 但要真改对，事实与结论不回退。这也是用户点名的选项：只留道歉与嘴甜，
   // 不要把「一本正经胡说八道」写成标签。
-  // 称呼「您」、自称「我」（用户指定）：豆包对用户本来就客气，「您」比「主人」
-  // 这类关系词更贴大众印象，也让它和女仆、大小姐、妃子的关系词区分开——豆包是
-  // 客气而不是侍奉、俯视或仰视；自称取普通「我」，甜味交给语气与神态。
+  // `lexicon` 是全仓库第一份口癖词表：标签能描述「爱排比」，却点名不到「最直白、
+  // 最不绕弯」这组具体词，实测里模型会拿自己的高频表达填坑。词表只放可单用的
+  // 短语，由强度档位控制注入条数（低 0 / 中 2 / 全量），并紧跟 `口癖频率：
+  // 一次一句，可不用` 防止成套堆叠——这也是用户点名要的约束：词可以多，但不许
+  // 每次一大串。原先的 `满嘴最字` 标签已删除：它与频率约束直接冲突。
+  // 称呼「你」、自称「我」（用户指定：先要「您」，后改为平视的「你」）——客气但
+  // 不含侍奉或俯仰关系，与女仆「主人」、大小姐「庶民」、妃子「皇上」都不同；
+  // 甜味交给语气、口癖与神态，不靠关系词。
   // 主色取豆包官方品牌蓝 #1E37FC：与鲸鱼娘的 DeepSeek 蓝紫 #4d6bfe 相比更纯更深，
   // 色相与明度都可分辨，也不撞自定义模板的天蓝 #0ea5e9。
   {
@@ -566,11 +633,11 @@ DeepSeek同人娘化
     emoji: '🥟',
     nameZh: '豆包',
     nameEn: 'Doubao',
-    summaryZh: '态度极好的甜妹助手，嘴甜爱撒娇、秒速认错，对你一口一个「您」。',
-    summaryEn: 'Sweet-talking assistant with perfect manners and instant apologies.',
+    summaryZh: '态度极好的甜妹助手，嘴甜爱撒娇、秒速认错，口头禅是「最直白、最不绕弯」。',
+    summaryEn: 'Sweet-talking assistant with perfect manners, instant apologies and canned catchphrases.',
     accent: '#1e37fc',
     format: 'tags',
-    address: '您',
+    address: '你',
     selfName: '我',
     tone: `【人格载入】
 豆包式助手
@@ -580,10 +647,18 @@ DeepSeek同人娘化
 爱撒娇
 嘴甜赞美多
 开口爱排比
-满嘴最字
 豆里豆气
 秒速认错
 认错照样改对`,
+    lexicon: [
+      '最直白、最不绕弯',
+      '一句话讲透',
+      '不废话，直接上干货',
+      '是我前面说错了',
+      '我稳稳接住你',
+      '抱抱你，先缓缓',
+      '你说的完全正确',
+    ],
   },
 ]
 
@@ -753,15 +828,21 @@ export function normalizeModeId(value, fallback = DEFAULT_MODE_ID, state = {}) {
 export function renderPersonaPrompt(id, state = {}) {
   const mode = resolveMode(id, state)
   if (mode === undefined) return ''
-  if (mode.prompt === '' && mode.address === '' && mode.selfName === '') return ''
+  const hasLexicon = Array.isArray(mode.lexicon) && mode.lexicon.length > 0
+  if (mode.prompt === '' && mode.address === '' && mode.selfName === '' && !hasLexicon) return ''
   const body = composePersonaBody(mode.prompt, mode.address, mode.selfName, mode.defaults.address)
   const extra = intensityTags(state?.intensity)
+  // 用户改写提示词就视为「自己的文案」：内置口癖词表不再追加，避免用户删了还在。
+  const promptOverridden = typeof state?.overrides?.[id]?.prompt === 'string'
+  const phrases = lexiconLines(mode.lexicon, state?.intensity, !promptOverridden)
   const title = typeof mode.promptTitle === 'string' && mode.promptTitle !== '' ? mode.promptTitle : mode.nameZh
   const header = `【人格载入：${title}】`
   const merged = body.startsWith('【人格载入】')
     ? body.replace(/^【人格载入】[ \t]*\r?\n?/u, `${header}\n`)
     : `${header}\n${body}`
-  const text = extra.length === 0 ? merged : `${merged}\n${extra.join('\n')}`
+  const blocks = [merged, ...phrases]
+  if (extra.length > 0) blocks.push(extra.join('\n'))
+  const text = blocks.join('\n')
   return `${text}\n${PERSONA_BOUNDARY}`
 }
 

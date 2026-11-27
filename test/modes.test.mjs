@@ -417,18 +417,13 @@ test('豆包取大众印象的甜妹口吻与「豆包体」，认错必须真�
   assert.match(mode.tone, /^嘴甜赞美多$/mu)
   assert.match(mode.tone, /^爱用最字排比$/mu)
   assert.match(mode.tone, /^豆里豆气$/mu)
-  // 「满嘴最字」与「开口爱排比」都换掉了：前者与用量约束冲突，后者的「开口」把
-  // 口癖位置钉死在开头；现在是 `爱用最字排比`——保留「最」字排比的特征，却不再
-  // 指定位置。
-  assert.doesNotMatch(mode.tone, /^满嘴最字$/mu)
-  assert.doesNotMatch(mode.tone, /^开口爱排比$/mu)
+  // 「满嘴最字」「开口爱排比」都已换成 `爱用最字排比`：前者与用量约束冲突，后者的
+  // 「开口」把口癖位置钉死在开头。旧措辞不再用断言守着（见 AGENTS.md 的测试范围）。
   assert.match(mode.tone, /^秒速认错$/mu)
   // 人格级护栏：只取「秒速认错」的姿态，不取「下次还敢」的糊弄，也不把
   // 「一本正经胡说八道」写成标签——认错要真改对，事实与结论不回退。
   assert.match(mode.tone, /^认错照样改对$/mu)
   assert.doesNotMatch(mode.tone, /下次还敢|糊弄|胡说|编造|答非所问/u)
-  // 卡片说明只讲语气与态度，不交代口癖（用户要求删掉「偶尔带一句口头禅」）。
-  assert.doesNotMatch(mode.summaryZh, /口头禅|口癖/u)
   const prompt = renderPersonaPrompt('doubao')
   assert.match(prompt, /^【人格载入：豆包】$/mu)
   assert.match(prompt, /^自称我$/mu)

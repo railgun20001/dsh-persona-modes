@@ -61,7 +61,7 @@ test('运行时把模式标题合并成【人格载入：模式名】', () => {
 test('默认模式排第一，其余模式按顺序给出', () => {
   assert.deepEqual(
     MODES.map((mode) => mode.id),
-    ['off', 'catgirl', 'tsundere', 'sharp', 'mom', 'workhorse', 'whale', 'maid', 'ojousama', 'daughter', 'tiga', 'yandere', 'airhead', 'simp', 'gamer', 'consort'],
+    ['off', 'catgirl', 'tsundere', 'sharp', 'mom', 'workhorse', 'whale', 'maid', 'ojousama', 'daughter', 'tiga', 'yandere', 'airhead', 'simp', 'gamer', 'consort', 'doubao'],
   )
 })
 
@@ -387,6 +387,47 @@ test('妃子设定为宫廷语感与枕边风进言，决定权留给皇上', ()
   // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–181 / 高 185–234）。
   const medium = renderPersonaPrompt('consort', { intensity: 'medium' })
   const high = renderPersonaPrompt('consort', { intensity: 'high' })
+  assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
+  assert.ok(medium.length >= 132 && medium.length <= 181, `中档 ${medium.length} 字越界`)
+  assert.ok(high.length >= 185 && high.length <= 234, `高档 ${high.length} 字越界`)
+})
+
+test('豆包取大众印象的甜妹口吻与「豆包体」，认错必须真改对', () => {
+  const mode = getMode('doubao')
+  assert.ok(mode)
+  assert.equal(mode.nameZh, '豆包')
+  assert.equal(mode.format, 'tags')
+  // 用户指定的客气称谓：称呼「您」、自称普通「我」。
+  assert.equal(mode.address, '您')
+  assert.equal(mode.selfName, '我')
+  // 卡片主色取豆包官方品牌蓝，比鲸鱼娘的 DeepSeek 蓝更纯更深。
+  assert.equal(mode.accent, '#1e37fc')
+  assert.notEqual(mode.accent, getMode('whale').accent)
+  // 大众认知的四层：甜妹口吻/态度 → 先共情 → 撒娇赞美 → 豆包体排比与「最」字。
+  assert.match(mode.tone, /^【人格载入】/u)
+  assert.match(mode.tone, /^豆包式助手$/mu)
+  assert.match(mode.tone, /^甜妹口吻$/mu)
+  assert.match(mode.tone, /^态度极好$/mu)
+  assert.match(mode.tone, /^先共情再回答$/mu)
+  assert.match(mode.tone, /^爱撒娇$/mu)
+  assert.match(mode.tone, /^嘴甜赞美多$/mu)
+  assert.match(mode.tone, /^开口爱排比$/mu)
+  assert.match(mode.tone, /^满嘴最字$/mu)
+  assert.match(mode.tone, /^豆里豆气$/mu)
+  assert.match(mode.tone, /^秒速认错$/mu)
+  // 人格级护栏：只取「秒速认错」的姿态，不取「下次还敢」的糊弄，也不把
+  // 「一本正经胡说八道」写成标签——认错要真改对，事实与结论不回退。
+  assert.match(mode.tone, /^认错照样改对$/mu)
+  assert.doesNotMatch(mode.tone, /下次还敢|糊弄|胡说|编造|答非所问/u)
+  const prompt = renderPersonaPrompt('doubao')
+  assert.match(prompt, /^【人格载入：豆包】$/mu)
+  assert.match(prompt, /^自称我$/mu)
+  assert.match(prompt, /^称呼您$/mu)
+  assert.match(prompt, /^边界：/mu)
+  assert.ok(prompt.length <= 300, `豆包提示词 ${prompt.length} 字，超过标签式预算`)
+  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–181 / 高 185–234）。
+  const medium = renderPersonaPrompt('doubao', { intensity: 'medium' })
+  const high = renderPersonaPrompt('doubao', { intensity: 'high' })
   assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
   assert.ok(medium.length >= 132 && medium.length <= 181, `中档 ${medium.length} 字越界`)
   assert.ok(high.length >= 185 && high.length <= 234, `高档 ${high.length} 字越界`)

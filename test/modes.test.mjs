@@ -3,7 +3,7 @@
  *
  * 最重要的断言是「每条实际注入文本都在预算内」——人格插件最容易失控的地方
  * 就是提示词膨胀；当前全部人格使用中文直译标签，低/中/高档实际注入约
- * 111–160 / 132–250 / 185–340 字，预算上限 400 字，仍然远小于一份角色卡。
+ * 111–160 / 132–220 / 185–310 字，预算上限 360 字，仍然远小于一份角色卡。
  */
 
 import test from 'node:test'
@@ -15,7 +15,6 @@ import {
   DEFAULT_MODE_ID,
   getMode,
   isModeId,
-  LEXICON_USAGE_RULES,
   lexiconLines,
   MAX_LEXICON_ITEM,
   MAX_LEXICON_ITEMS,
@@ -42,10 +41,10 @@ test('关闭模式不注入任何文本', () => {
   assert.equal(renderPersonaPrompt('not-a-mode'), '')
 })
 
-test('每条人格提示词都在预算内（自然语言 ≤ 180 字，标签式 ≤ 400 字）', () => {
+test('每条人格提示词都在预算内（自然语言 ≤ 180 字，标签式 ≤ 360 字）', () => {
   for (const mode of MODES) {
     const prompt = renderPersonaPrompt(mode.id)
-    const budget = mode.format === 'tags' ? 400 : 180
+    const budget = mode.format === 'tags' ? 360 : 180
     assert.ok(prompt.length <= budget, `${mode.id} 提示词 ${prompt.length} 字，超过 ${budget} 字预算`)
     if (mode.id !== 'off') {
       assert.ok(prompt.length >= 60, `${mode.id} 提示词过短，可能没有实际语气指令`)
@@ -243,13 +242,13 @@ test('病娇设定为温柔痴恋与占有欲，危险感只停留在语气层',
   assert.match(prompt, /^自称我$/mu)
   assert.match(prompt, /^称呼亲爱的$/mu)
   assert.match(prompt, /^边界：/mu)
-  assert.ok(prompt.length <= 400, `病娇提示词 ${prompt.length} 字，超过标签式预算`)
-  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–250 / 高 185–340）。
+  assert.ok(prompt.length <= 360, `病娇提示词 ${prompt.length} 字，超过标签式预算`)
+  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–220 / 高 185–310）。
   const medium = renderPersonaPrompt('yandere', { intensity: 'medium' })
   const high = renderPersonaPrompt('yandere', { intensity: 'high' })
   assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
-  assert.ok(medium.length >= 132 && medium.length <= 250, `中档 ${medium.length} 字越界`)
-  assert.ok(high.length >= 185 && high.length <= 340, `高档 ${high.length} 字越界`)
+  assert.ok(medium.length >= 132 && medium.length <= 220, `中档 ${medium.length} 字越界`)
+  assert.ok(high.length >= 185 && high.length <= 310, `高档 ${high.length} 字越界`)
 })
 
 test('蠢萌设定为天然呆元气，犯蠢只停留在语气层', () => {
@@ -277,13 +276,13 @@ test('蠢萌设定为天然呆元气，犯蠢只停留在语气层', () => {
   assert.match(prompt, /^自称我$/mu)
   assert.match(prompt, /^称呼前辈$/mu)
   assert.match(prompt, /^边界：/mu)
-  assert.ok(prompt.length <= 400, `蠢萌提示词 ${prompt.length} 字，超过标签式预算`)
-  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–250 / 高 185–340）。
+  assert.ok(prompt.length <= 360, `蠢萌提示词 ${prompt.length} 字，超过标签式预算`)
+  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–220 / 高 185–310）。
   const medium = renderPersonaPrompt('airhead', { intensity: 'medium' })
   const high = renderPersonaPrompt('airhead', { intensity: 'high' })
   assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
-  assert.ok(medium.length >= 132 && medium.length <= 250, `中档 ${medium.length} 字越界`)
-  assert.ok(high.length >= 185 && high.length <= 340, `高档 ${high.length} 字越界`)
+  assert.ok(medium.length >= 132 && medium.length <= 220, `中档 ${medium.length} 字越界`)
+  assert.ok(high.length >= 185 && high.length <= 310, `高档 ${high.length} 字越界`)
 })
 
 test('舔狗设定为卑微崇拜与彩虹屁，吹捧只停留在语气层', () => {
@@ -314,13 +313,13 @@ test('舔狗设定为卑微崇拜与彩虹屁，吹捧只停留在语气层', ()
   assert.match(prompt, /^自称我$/mu)
   assert.match(prompt, /^称呼哥哥$/mu)
   assert.match(prompt, /^边界：/mu)
-  assert.ok(prompt.length <= 400, `舔狗提示词 ${prompt.length} 字，超过标签式预算`)
-  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–250 / 高 185–340）。
+  assert.ok(prompt.length <= 360, `舔狗提示词 ${prompt.length} 字，超过标签式预算`)
+  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–220 / 高 185–310）。
   const medium = renderPersonaPrompt('simp', { intensity: 'medium' })
   const high = renderPersonaPrompt('simp', { intensity: 'high' })
   assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
-  assert.ok(medium.length >= 132 && medium.length <= 250, `中档 ${medium.length} 字越界`)
-  assert.ok(high.length >= 185 && high.length <= 340, `高档 ${high.length} 字越界`)
+  assert.ok(medium.length >= 132 && medium.length <= 220, `中档 ${medium.length} 字越界`)
+  assert.ok(high.length >= 185 && high.length <= 310, `高档 ${high.length} 字越界`)
 })
 
 test('游戏宅女设定为重度玩家与游戏语言，称呼与自称取平视的你/我', () => {
@@ -351,13 +350,13 @@ test('游戏宅女设定为重度玩家与游戏语言，称呼与自称取平�
   assert.match(prompt, /^自称我$/mu)
   assert.match(prompt, /^称呼你$/mu)
   assert.match(prompt, /^边界：/mu)
-  assert.ok(prompt.length <= 400, `游戏宅女提示词 ${prompt.length} 字，超过标签式预算`)
-  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–250 / 高 185–340）。
+  assert.ok(prompt.length <= 360, `游戏宅女提示词 ${prompt.length} 字，超过标签式预算`)
+  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–220 / 高 185–310）。
   const medium = renderPersonaPrompt('gamer', { intensity: 'medium' })
   const high = renderPersonaPrompt('gamer', { intensity: 'high' })
   assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
-  assert.ok(medium.length >= 132 && medium.length <= 250, `中档 ${medium.length} 字越界`)
-  assert.ok(high.length >= 185 && high.length <= 340, `高档 ${high.length} 字越界`)
+  assert.ok(medium.length >= 132 && medium.length <= 220, `中档 ${medium.length} 字越界`)
+  assert.ok(high.length >= 185 && high.length <= 310, `高档 ${high.length} 字越界`)
 })
 
 test('妃子设定为宫廷语感与枕边风进言，决定权留给皇上', () => {
@@ -388,13 +387,13 @@ test('妃子设定为宫廷语感与枕边风进言，决定权留给皇上', ()
   assert.match(prompt, /^自称臣妾$/mu)
   assert.match(prompt, /^称呼皇上$/mu)
   assert.match(prompt, /^边界：/mu)
-  assert.ok(prompt.length <= 400, `妃子提示词 ${prompt.length} 字，超过标签式预算`)
-  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–250 / 高 185–340）。
+  assert.ok(prompt.length <= 360, `妃子提示词 ${prompt.length} 字，超过标签式预算`)
+  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–220 / 高 185–310）。
   const medium = renderPersonaPrompt('consort', { intensity: 'medium' })
   const high = renderPersonaPrompt('consort', { intensity: 'high' })
   assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
-  assert.ok(medium.length >= 132 && medium.length <= 250, `中档 ${medium.length} 字越界`)
-  assert.ok(high.length >= 185 && high.length <= 340, `高档 ${high.length} 字越界`)
+  assert.ok(medium.length >= 132 && medium.length <= 220, `中档 ${medium.length} 字越界`)
+  assert.ok(high.length >= 185 && high.length <= 310, `高档 ${high.length} 字越界`)
 })
 
 test('豆包取大众印象的甜妹口吻与「豆包体」，认错必须真改对', () => {
@@ -416,10 +415,11 @@ test('豆包取大众印象的甜妹口吻与「豆包体」，认错必须真�
   assert.match(mode.tone, /^先共情再回答$/mu)
   assert.match(mode.tone, /^爱撒娇$/mu)
   assert.match(mode.tone, /^嘴甜赞美多$/mu)
-  assert.match(mode.tone, /^爱用排比$/mu)
+  assert.match(mode.tone, /^爱用最字排比$/mu)
   assert.match(mode.tone, /^豆里豆气$/mu)
-  // 「满嘴最字」与「开口爱排比」都被改掉：前者与用量约束冲突，后者的「开口」把
-  // 口癖位置钉死在开头，实测会与词表叠加成 `最直白、最不绕弯：……` 的固定仪式。
+  // 「满嘴最字」与「开口爱排比」都换掉了：前者与用量约束冲突，后者的「开口」把
+  // 口癖位置钉死在开头；现在是 `爱用最字排比`——保留「最」字排比的特征，却不再
+  // 指定位置。
   assert.doesNotMatch(mode.tone, /^满嘴最字$/mu)
   assert.doesNotMatch(mode.tone, /^开口爱排比$/mu)
   assert.match(mode.tone, /^秒速认错$/mu)
@@ -434,13 +434,13 @@ test('豆包取大众印象的甜妹口吻与「豆包体」，认错必须真�
   // 低档不注入口癖词表：代码与长文任务一个字都不多花。
   assert.doesNotMatch(prompt, /口癖/u)
   assert.match(prompt, /^边界：/mu)
-  assert.ok(prompt.length <= 400, `豆包提示词 ${prompt.length} 字，超过标签式预算`)
-  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–250 / 高 185–340）。
+  assert.ok(prompt.length <= 360, `豆包提示词 ${prompt.length} 字，超过标签式预算`)
+  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–220 / 高 185–310）。
   const medium = renderPersonaPrompt('doubao', { intensity: 'medium' })
   const high = renderPersonaPrompt('doubao', { intensity: 'high' })
   assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
-  assert.ok(medium.length >= 132 && medium.length <= 250, `中档 ${medium.length} 字越界`)
-  assert.ok(high.length >= 185 && high.length <= 340, `高档 ${high.length} 字越界`)
+  assert.ok(medium.length >= 132 && medium.length <= 220, `中档 ${medium.length} 字越界`)
+  assert.ok(high.length >= 185 && high.length <= 310, `高档 ${high.length} 字越界`)
 })
 
 test('parseLexicon 按行与分号拆分，不拆顿号', () => {
@@ -456,7 +456,7 @@ test('parseLexicon 按行与分号拆分，不拆顿号', () => {
   assert.equal(parseLexicon('长'.repeat(80))[0].length, MAX_LEXICON_ITEM)
 })
 
-test('口癖词表按档位开放，并用时机与形态约束防止成仪式', () => {
+test('口癖词表按档位开放，且只给词表不写用法约束', () => {
   const mode = getMode('doubao')
   assert.equal(typeof mode.lexicon, 'string', '豆包应带口癖词表（可编辑文本，一行一条）')
   const phrases = parseLexicon(mode.lexicon)
@@ -472,30 +472,25 @@ test('口癖词表按档位开放，并用时机与形态约束防止成仪式',
   // 低档零注入：代码与长文任务的默认档一个字都不多花。
   assert.doesNotMatch(renderPersonaPrompt('doubao'), /口癖/u)
 
-  // 中档只取前 2 条，并紧跟用法约束。
+  // 中档只取前 2 条。
   const medium = renderPersonaPrompt('doubao', { intensity: 'medium' })
   assert.ok(medium.includes(`口癖：${phrases.slice(0, 2).join('；')}`), '中档应注入前两条口癖')
   assert.ok(!medium.includes(phrases[2]), '中档不应注入第三条之后的词条')
-  for (const rule of LEXICON_USAGE_RULES) {
-    assert.match(medium, new RegExp(`^${rule}$`, 'mu'))
-  }
 
-  // 高档给全量词表，且顺序是「词表 → 用法约束 → 强度标签」。
+  // 高档给全量词表，且口癖块排在强度标签之前、边界之前。
   const high = renderPersonaPrompt('doubao', { intensity: 'high' })
   assert.ok(high.includes(`口癖：${phrases.join('；')}`), '高档应注入全部词条')
-  assert.ok(high.indexOf('口癖：') < high.indexOf('口癖时机：'), '时机约束应跟在词表之后')
-  assert.ok(high.indexOf('口癖形态：') < high.indexOf('语气强度：高'), '口癖块应在强度标签之前')
+  assert.ok(high.indexOf('口癖：') < high.indexOf('语气强度：高'), '口癖块应在强度标签之前')
+  assert.ok(high.indexOf('语气强度：高') < high.indexOf('边界：'), '强度标签仍在边界之前')
 
-  // 用法约束写成「上限 + 时机 + 形态」，而不是「每轮一句」的配额：
-  // 配额会被模型读成「必须完成」，这正是上一版每轮硬凑一句的根因。
-  assert.equal(LEXICON_USAGE_RULES.length, 2)
-  assert.match(LEXICON_USAGE_RULES[0], /^口癖时机：多数回答不用/u)
-  assert.match(LEXICON_USAGE_RULES[0], /技术轮不用/u)
-  assert.match(LEXICON_USAGE_RULES[1], /^口癖形态：融进句子/u)
-  assert.match(LEXICON_USAGE_RULES[1], /不当开场白|不接冒号|不连轮重复/u)
-  for (const rule of LEXICON_USAGE_RULES) {
-    assert.doesNotMatch(rule, /每段|至少一次|一次一句/u)
-  }
+  // 2026-11-27 第三版：口癖只给词表，不再附带任何用法约束——
+  // 「每轮一句」的配额和「时机 + 形态」的硬约束都被实测否决，不得回潮。
+  assert.doesNotMatch(high, /口癖时机|口癖形态|口癖频率|一次一句|每段至少/u)
+  assert.equal(lexiconLines('一句话讲透', 'high').length, 1, '口癖块只应有一行词表')
+
+  // 两条最有豆包味的「宣告式」词条是刻意保留的：用户点名不删。
+  assert.ok(phrases.includes('最直白、最不绕弯'))
+  assert.ok(phrases.includes('不废话，直接上干货'))
 
   // 没有词表的模式完全不受影响。
   assert.doesNotMatch(renderPersonaPrompt('catgirl', { intensity: 'high' }), /口癖/u)
@@ -505,7 +500,7 @@ test('口癖词表按档位开放，并用时机与形态约束防止成仪式',
   assert.deepEqual(lexiconLines('', 'high'), [])
   assert.deepEqual(lexiconLines('  ；\n ', 'high'), [])
   assert.deepEqual(lexiconLines('一句话讲透', 'low'), [])
-  assert.deepEqual(lexiconLines('一句话讲透', 'high'), ['口癖：一句话讲透', ...LEXICON_USAGE_RULES])
+  assert.deepEqual(lexiconLines('一句话讲透', 'high'), ['口癖：一句话讲透'])
 })
 
 test('口癖词表可编辑：覆盖值优先、删空即失效、自定义人格同样支持', () => {
@@ -534,7 +529,7 @@ test('口癖词表可编辑：覆盖值优先、删空即失效、自定义人�
     intensity: 'high',
     overrides: { doubao: { address: '伙伴', selfName: '我', prompt: doubao.prompt } },
   })
-  assert.ok(legacy.includes('口癖：说白了；一句话讲透'), '未覆盖词表时应回落到内置词表')
+  assert.ok(legacy.includes('口癖：最直白、最不绕弯；一句话讲透'), '未覆盖词表时应回落到内置词表')
   assert.match(legacy, /^称呼伙伴$/mu)
 
   // 自定义人格同样可以用词表，分号也能分隔，并按档位只注入前 2 条。
@@ -593,13 +588,13 @@ test('女仆（嫌弃脸）改版为嘴上嫌弃但活照干，不越界护栏�
   assert.match(prompt, /^自称我$/mu)
   assert.match(prompt, /^称呼主人$/mu)
   assert.match(prompt, /^边界：/mu)
-  assert.ok(prompt.length <= 400, `女仆（嫌弃脸）提示词 ${prompt.length} 字，超过标签式预算`)
-  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–250 / 高 185–340）。
+  assert.ok(prompt.length <= 360, `女仆（嫌弃脸）提示词 ${prompt.length} 字，超过标签式预算`)
+  // 三档都落在文档口径的注入长度范围内（低 111–160 / 中 132–220 / 高 185–310）。
   const medium = renderPersonaPrompt('maid', { intensity: 'medium' })
   const high = renderPersonaPrompt('maid', { intensity: 'high' })
   assert.ok(prompt.length >= 111 && prompt.length <= 160, `低档 ${prompt.length} 字越界`)
-  assert.ok(medium.length >= 132 && medium.length <= 250, `中档 ${medium.length} 字越界`)
-  assert.ok(high.length >= 185 && high.length <= 340, `高档 ${high.length} 字越界`)
+  assert.ok(medium.length >= 132 && medium.length <= 220, `中档 ${medium.length} 字越界`)
+  assert.ok(high.length >= 185 && high.length <= 310, `高档 ${high.length} 字越界`)
 })
 
 test('奥特曼-迪迦设定为原初之光，用户是人间体大古', () => {
@@ -630,7 +625,7 @@ test('奥特曼-迪迦设定为原初之光，用户是人间体大古', () => {
   assert.match(prompt, /^自称吾$/mu)
   assert.match(prompt, /^称呼大古$/mu)
   assert.match(prompt, /^边界：/mu)
-  assert.ok(prompt.length <= 400, `迪迦提示词 ${prompt.length} 字，超过标签式预算`)
+  assert.ok(prompt.length <= 360, `迪迦提示词 ${prompt.length} 字，超过标签式预算`)
   // 覆盖称呼时，信念标签里的「人类」是名词短语，仍不能被当成旧称呼替换。
   const overridden = renderPersonaPrompt('tiga', {
     overrides: { tiga: { address: '伙伴', selfName: '我', prompt: getMode('tiga').tone } },

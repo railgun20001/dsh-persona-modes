@@ -58,6 +58,9 @@ const MAX_EMOJI = 8
 /** 自定义提示词上限。 */
 const MAX_PROMPT = 4000
 
+/** 口癖词表原文上限：一行一条，留足一整套口头禅的余量。 */
+const MAX_LEXICON = 600
+
 /**
  * 把未知值读成字符串。
  *
@@ -81,11 +84,14 @@ function cleanText(value, max) {
 }
 
 /**
- * 规整一组 `{ address, selfName, prompt }`。
+ * 规整一组 `{ address, selfName, prompt, lexicon }`。
+ *
+ * `lexicon` 是口癖词表原文（一行一条），与提示词一样按自由文本保存：用户写什么就存
+ * 什么，解析成词条是渲染时的事（见 `src/modes.js` 的 `parseLexicon`）。
  *
  * @param {unknown} value 原始值。
- * @param {{ address: string, selfName: string, prompt: string }} fallback 回落值。
- * @returns {{ address: string, selfName: string, prompt: string }} 规整后的值。
+ * @param {{ address: string, selfName: string, prompt: string, lexicon: string }} fallback 回落值。
+ * @returns {{ address: string, selfName: string, prompt: string, lexicon: string }} 规整后的值。
  */
 function normalizeValues(value, fallback) {
   const source = value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -93,6 +99,7 @@ function normalizeValues(value, fallback) {
     address: cleanText(source.address ?? fallback.address, MAX_SHORT_TEXT),
     selfName: cleanText(source.selfName ?? fallback.selfName, MAX_SHORT_TEXT),
     prompt: cleanText(source.prompt ?? fallback.prompt, MAX_PROMPT),
+    lexicon: cleanText(source.lexicon ?? fallback.lexicon ?? '', MAX_LEXICON),
   }
 }
 
@@ -129,12 +136,20 @@ export function normalizeDebug(value) {
 /**
  * 判断两组编辑值是否完全一致。
  *
- * @param {{ address: string, selfName: string, prompt: string }} left 左值。
- * @param {{ address: string, selfName: string, prompt: string }} right 右值。
+ * 四个字段都要比：漏掉 `lexicon` 会让「只改了词表」的编辑被判成「与默认相同」，
+ * 于是保存被当成恢复默认、词表改动凭空消失。
+ *
+ * @param {{ address: string, selfName: string, prompt: string, lexicon: string }} left 左值。
+ * @param {{ address: string, selfName: string, prompt: string, lexicon: string }} right 右值。
  * @returns {boolean} 是否一致。
  */
 function sameValues(left, right) {
-  return left.address === right.address && left.selfName === right.selfName && left.prompt === right.prompt
+  return (
+    left.address === right.address &&
+    left.selfName === right.selfName &&
+    left.prompt === right.prompt &&
+    (left.lexicon ?? '') === (right.lexicon ?? '')
+  )
 }
 
 /**
@@ -460,7 +475,7 @@ export function createStore(options = {}) {
     /**
      * 保存内置覆盖或自定义人格。
      *
-     * - 带内置 id：只更新 `address / selfName / prompt` 覆盖；
+     * - 带内置 id：只更新 `address / selfName / prompt / lexicon` 覆盖；
      * - 带自定义 id：更新该自定义人格的 `values`（名称/emoji 也可改）；
      * - 不带 id：新建一个自定义人格，`defaults` 取首次保存的值。
      *

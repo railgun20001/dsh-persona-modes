@@ -170,6 +170,7 @@ test('savePersona 保存内置覆盖并可重置', () => {
       address: '铲屎官',
       selfName: '本喵',
       prompt: '【人格载入】\n猫科少女',
+      lexicon: '',
     })
     assert.equal(createStore({ file: temp.file }).snapshot().overrides.catgirl.address, '铲屎官')
 
@@ -204,6 +205,7 @@ test('savePersona 新建、更新、重置、删除自定义人格', () => {
       address: '爸爸',
       selfName: '女儿',
       prompt: '【人格载入】\n女儿\n乖巧黏人',
+      lexicon: '',
     })
     assert.deepEqual(first.defaults, first.values)
 
@@ -256,7 +258,7 @@ test('readStateFile 丢弃坏自定义条目与未知覆盖', () => {
     }), 'utf8')
     const state = readStateFile(temp.file)
     assert.ok(state)
-    assert.deepEqual(state.overrides.catgirl, { address: '铲屎官', selfName: getMode('catgirl').selfName, prompt: getMode('catgirl').tone })
+    assert.deepEqual(state.overrides.catgirl, { address: '铲屎官', selfName: getMode('catgirl').selfName, prompt: getMode('catgirl').tone, lexicon: '' })
     assert.equal(state.customModes.length, 1)
     assert.equal(state.customModes[0].id, 'custom-good')
   } finally {

@@ -274,7 +274,8 @@ const editorTree = PersonaView({
     address: '主人',
     selfName: '猫娘',
     body: '【人格载入】\n猫科少女',
-    defaults: { address: '主人', selfName: '猫娘', prompt: '【人格载入】\n猫科少女' },
+    lexicon: '最直白、最不绕弯',
+    defaults: { address: '主人', selfName: '猫娘', prompt: '【人格载入】\n猫科少女', lexicon: '' },
   },
   editorBusy: false,
   editorError: null,
@@ -296,10 +297,48 @@ assert.ok(editorText.includes('自称'))
 assert.ok(editorText.includes('提示词'))
 assert.ok(editorText.includes('恢复默认'))
 assert.ok(editorText.includes('保存'))
+// 口癖词表是可编辑字段：编辑器里有独立输入框，值来自该模式的词表。
+assert.ok(editorText.includes('口癖词表'))
+const lexiconField = flatten(editorTree).find(
+  (node) => node.type === 'textarea' && node.props?.className === 'pm-textarea pm-textarea-lexicon',
+)
+assert.ok(lexiconField, '没有渲染口癖词表输入框')
+assert.equal(lexiconField.props.value, '最直白、最不绕弯')
+assert.equal(lexiconField.props.maxLength, 600)
 assert.ok(
   !flatten(editorTree).some((node) => node.type === 'button' && textOf(node) === '删除'),
   '编辑器里仍然保留删除按钮',
 )
+
+// 口癖词表在「查看当前提示词」里同时可见：既能在有效提示词里读到口癖行，
+// 也能看到「共几条 / 当前档位注入几条」，低档看不到口癖时不会以为词表失效。
+const lexiconData = buildModesView('doubao', { intensity: 'medium' })
+const lexiconTree = PersonaView({
+  t,
+  localeId: 'zh',
+  data: lexiconData,
+  pendingId: null,
+  error: null,
+  editor: null,
+  editorBusy: false,
+  editorError: null,
+  onSelect: () => {},
+  onRetry: () => {},
+  onRetrySave: () => {},
+  onEdit: () => {},
+  onCreate: () => {},
+  onEditorChange: () => {},
+  onSave: () => {},
+  onReset: () => {},
+  onDelete: () => {},
+  onCancelEdit: () => {},
+})
+const lexiconText = textOf(lexiconTree)
+assert.ok(
+  lexiconText.includes('口癖词表 7 条 · 当前档位注入 2 条'),
+  `预览里没有口癖词表说明：${lexiconText.slice(0, 200)}`,
+)
+assert.ok(lexiconText.includes('口癖：最直白、最不绕弯；一句话讲透'), '预览的提示词里应含口癖行')
 
 let editedId = null
 let createdCount = 0
@@ -372,7 +411,8 @@ const saveTree = PersonaView({
     address: '主人',
     selfName: '猫娘',
     body: '【人格载入】\n猫科少女',
-    defaults: { address: '主人', selfName: '猫娘', prompt: '【人格载入】\n猫科少女' },
+    lexicon: '最直白、最不绕弯',
+    defaults: { address: '主人', selfName: '猫娘', prompt: '【人格载入】\n猫科少女', lexicon: '' },
   },
   editorBusy: false,
   editorError: null,

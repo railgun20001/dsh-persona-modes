@@ -6,10 +6,11 @@
  * 事实，本插件只在运行时上下文里加一条很短的语气层。这样切换人格不会显著挤占
  * 上下文，也不会让模型把角色扮演误当成事实来源。
  *
- * 每条 `tone` 都是中文直译标签，`address` / `selfName` 是对应的默认称呼与自称。
- * 用户可以在设置页覆盖这三个字段；{@link composePersonaBody} 会把覆盖值写回
- * 标签块，真正的注入文本由 {@link renderPersonaPrompt} 拼装。客户端拿到的也是
- * 这一份，所以设置页里展示的字数与模型实际收到的字数一致。
+ * 每条 `tone` 都是中文直译标签，`address` / `selfName` 是对应的默认称呼与自称，
+ * 可选的 `lexicon` 是口癖词表（一行一条的短词）。用户可以在设置页覆盖这四个字段；
+ * {@link composePersonaBody} 会把覆盖值写回标签块，真正的注入文本由
+ * {@link renderPersonaPrompt} 拼装。客户端拿到的也是这一份，所以设置页里展示的
+ * 字数与模型实际收到的字数一致。
  *
  * 自定义人格存放在状态文件里，结构见 `src/store.js`；本模块只负责把「内置 +
  * 自定义 + 覆盖值」解析成一个统一的有效模式。
@@ -134,6 +135,43 @@ export function normalizeIntensity(value) {
 }
 
 /**
+ * 口癖词表的条数与单条长度上限。
+ *
+ * 词表是**可编辑字段**，所以必须自己设上限：条数取 12 条（够覆盖一套口头禅，
+ * 又不至于把上下文塞满），单条取 24 字（口癖是短词，长过一行的就不是口癖而是
+ * 台词了——本模块坚持「给词不给剧本」）。
+ */
+export const MAX_LEXICON_ITEMS = 12
+export const MAX_LEXICON_ITEM = 24
+
+/**
+ * 把词表文本解析成词条数组。
+ *
+ * 支持两种分隔方式，都是用户手写时最自然的：
+ * - 换行：编辑器里一行一条（主用法）；
+ * - 分号：`；` 或 `;`，方便写在一行里。
+ *
+ * 刻意**不按顿号拆分**：词条自己经常带顿号（`最直白、最不绕弯`），按顿号拆会把一条
+ * 口癖拆成一堆碎片。空行与首尾空白直接丢掉，超长词条截断，条数超限截断。
+ *
+ * @param {unknown} value 词表文本或数组。
+ * @returns {Array<string>} 词条数组。
+ */
+export function parseLexicon(value) {
+  const raw = Array.isArray(value)
+    ? value.filter((item) => typeof item === 'string').join('\n')
+    : typeof value === 'string'
+      ? value
+      : ''
+  return raw
+    .split(/\r?\n|[；;]/u)
+    .map((item) => item.trim())
+    .filter((item) => item !== '')
+    .slice(0, MAX_LEXICON_ITEMS)
+    .map((item) => item.slice(0, MAX_LEXICON_ITEM))
+}
+
+/**
  * 取某个档位要追加的标签行。
  *
  * 三档都会返回内容（低档也给出程度说明），未知值回落到低档。
@@ -146,30 +184,24 @@ export function intensityTags(value) {
 }
 
 /**
- * 把口癖词表渲染成要注入的行。
+ * 取某个档位要注入的口癖词表行。
  *
- * 返回零行、两行或一条词表行加一条频率约束行：
+ * 返回零行或两条：`口癖：词1；词2…` 紧跟 {@link LEXICON_FREQUENCY_TEXT}。
  *
- * - 低档或没有词表时返回空数组，不改动注入文本；
- * - 其余档位返回 `口癖：词1；词2…`，紧跟 {@link LEXICON_FREQUENCY_TEXT}。
+ * - 低档返回空数组，不改动注入文本；
+ * - 词条之间用「；」而不是「、」分隔：词条自己经常就带顿号（`最直白、最不绕弯`），
+ *   用顿号当分隔符会读成一条长串，模型也就分不清哪几个是可单用的口癖。
  *
- * 词条之间用「；」而不是「、」分隔：词条自己经常就带顿号（`最直白、最不绕弯`），
- * 用顿号当分隔符会读成一条长串，模型也就分不清哪几个是可单用的口癖。
- *
- * @param {unknown} lexicon 人格上的词表（字符串数组）。
+ * @param {unknown} lexicon 词表文本或数组。
  * @param {unknown} intensity 强度值。
- * @param {boolean} [enabled] 是否允许追加（提示词被用户覆盖时为 false）。
  * @returns {Array<string>} 需要追加的行。
  */
-export function lexiconLines(lexicon, intensity, enabled = true) {
-  if (enabled === false) return []
-  const list = Array.isArray(lexicon)
-    ? lexicon.filter((item) => typeof item === 'string' && item.trim() !== '')
-    : []
+export function lexiconLines(lexicon, intensity) {
+  const list = parseLexicon(lexicon)
   if (list.length === 0) return []
   const count = LEXICON_COUNTS[normalizeIntensity(intensity)]
   if (!(count > 0)) return []
-  const picked = list.slice(0, count).map((item) => item.trim())
+  const picked = list.slice(0, count)
   return [`口癖：${picked.join('；')}`, LEXICON_FREQUENCY_TEXT]
 }
 
@@ -225,6 +257,8 @@ export const CUSTOM_PERSONA_DEFAULTS = {
   prompt: `【人格载入】
 自定义人格
 性格温和`,
+  // 新建自定义人格时词表为空：口癖是可选加料，默认不该凭空替用户编口头禅。
+  lexicon: '',
 }
 
 /**
@@ -650,15 +684,13 @@ DeepSeek同人娘化
 豆里豆气
 秒速认错
 认错照样改对`,
-    lexicon: [
-      '最直白、最不绕弯',
-      '一句话讲透',
-      '不废话，直接上干货',
-      '是我前面说错了',
-      '我稳稳接住你',
-      '抱抱你，先缓缓',
-      '你说的完全正确',
-    ],
+    lexicon: `最直白、最不绕弯
+一句话讲透
+不废话，直接上干货
+是我前面说错了
+我稳稳接住你
+抱抱你，先缓缓
+你说的完全正确`,
   },
 ]
 
@@ -746,12 +778,21 @@ export function resolveMode(id, state = {}) {
     const address = typeof override?.address === 'string' ? override.address : builtin.address
     const selfName = typeof override?.selfName === 'string' ? override.selfName : builtin.selfName
     const prompt = typeof override?.prompt === 'string' ? override.prompt : builtin.tone
+    // 词表和称呼/自称/提示词一样是普通可编辑字段：覆盖里存了就用户说了算（删空就是
+    // 真的没有），没存过就回落到内置值。
+    const lexicon = typeof override?.lexicon === 'string' ? override.lexicon : (builtin.lexicon ?? '')
     return {
       ...builtin,
       address,
       selfName,
       prompt,
-      defaults: { address: builtin.address, selfName: builtin.selfName, prompt: builtin.tone },
+      lexicon,
+      defaults: {
+        address: builtin.address,
+        selfName: builtin.selfName,
+        prompt: builtin.tone,
+        lexicon: builtin.lexicon ?? '',
+      },
       custom: false,
     }
   }
@@ -766,6 +807,7 @@ export function resolveMode(id, state = {}) {
       address: values.address,
       selfName: values.selfName,
       prompt: values.prompt,
+      lexicon: values.lexicon ?? '',
       defaults: { ...custom.defaults },
       custom: true,
     }
@@ -828,13 +870,10 @@ export function normalizeModeId(value, fallback = DEFAULT_MODE_ID, state = {}) {
 export function renderPersonaPrompt(id, state = {}) {
   const mode = resolveMode(id, state)
   if (mode === undefined) return ''
-  const hasLexicon = Array.isArray(mode.lexicon) && mode.lexicon.length > 0
-  if (mode.prompt === '' && mode.address === '' && mode.selfName === '' && !hasLexicon) return ''
+  const phrases = lexiconLines(mode.lexicon, state?.intensity)
+  if (mode.prompt === '' && mode.address === '' && mode.selfName === '' && phrases.length === 0) return ''
   const body = composePersonaBody(mode.prompt, mode.address, mode.selfName, mode.defaults.address)
   const extra = intensityTags(state?.intensity)
-  // 用户改写提示词就视为「自己的文案」：内置口癖词表不再追加，避免用户删了还在。
-  const promptOverridden = typeof state?.overrides?.[id]?.prompt === 'string'
-  const phrases = lexiconLines(mode.lexicon, state?.intensity, !promptOverridden)
   const title = typeof mode.promptTitle === 'string' && mode.promptTitle !== '' ? mode.promptTitle : mode.nameZh
   const header = `【人格载入：${title}】`
   const merged = body.startsWith('【人格载入】')
@@ -863,6 +902,7 @@ export function buildModesView(activeId, state = {}) {
   const modes = ids.map((id) => {
     const mode = resolveMode(id, state)
     const prompt = renderPersonaPrompt(id, state)
+    const phrases = parseLexicon(mode.lexicon)
     return {
       id: mode.id,
       emoji: mode.emoji,
@@ -877,6 +917,13 @@ export function buildModesView(activeId, state = {}) {
       custom: mode.custom,
       address: mode.address,
       selfName: mode.selfName,
+      // 词表既给编辑用（`lexicon` 原文，一行一条），也给展示用（解析后的条数）。
+      // `lexiconInjected` 是当前强度档位真正会注入的条数，设置页用它提示「现在会
+      // 用几条」，免得低档看不到口癖时以为词表失效。
+      lexicon: mode.lexicon ?? '',
+      lexiconPhrases: phrases,
+      lexiconCount: phrases.length,
+      lexiconInjected: Math.min(phrases.length, LEXICON_COUNTS[normalizeIntensity(state?.intensity)]),
       body: mode.prompt,
       defaults: mode.defaults,
     }

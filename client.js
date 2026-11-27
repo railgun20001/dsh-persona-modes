@@ -104,6 +104,9 @@ window.__ModuleLoader__.load({
       address: '称呼',
       selfName: '自称',
       promptBody: '提示词',
+      lexicon: '口癖词表',
+      lexiconHint: '一行一条；低档不注入，中档注入前 2 条，高档全部注入，并附带「一次一句」的频率约束。留空即不使用口癖。',
+      lexiconPreview: '口癖词表 {count} 条 · 当前档位注入 {injected} 条',
       save: '保存',
       saving: '保存中…',
       reset: '恢复默认',
@@ -111,7 +114,7 @@ window.__ModuleLoader__.load({
       deleteAria: '删除「{name}」',
       customBadge: '自定义',
       builtinBadge: '内置',
-      editorHint: '称呼和自称会写进标签块；提示词可用中文标签，也可以写自然语言。',
+      editorHint: '称呼和自称会写进标签块；提示词可用中文标签，也可以写自然语言；口癖词表一行一条，按强度档位决定注入几条。',
       editorDefault: '默认：称呼 {address} / 自称 {selfName}',
       deleteConfirm: '确定删除「{name}」吗？',
       saveFailed: '保存失败，请重试。',
@@ -184,6 +187,9 @@ window.__ModuleLoader__.load({
       address: 'Calls you',
       selfName: 'Calls itself',
       promptBody: 'Prompt',
+      lexicon: 'Catchphrase list',
+      lexiconHint: 'One per line. Low tier injects none, medium the first 2, high all of them, with a one-per-reply frequency cap. Leave empty to disable.',
+      lexiconPreview: 'Catchphrase list: {count} entries · {injected} injected at this tier',
       save: 'Save',
       saving: 'Saving…',
       reset: 'Reset to default',
@@ -191,7 +197,7 @@ window.__ModuleLoader__.load({
       deleteAria: 'Delete “{name}”',
       customBadge: 'Custom',
       builtinBadge: 'Built-in',
-      editorHint: 'Address and self-name are written into the tag block; the prompt can be tags or plain language.',
+      editorHint: 'Address and self-name are written into the tag block; the prompt can be tags or plain language; the catchphrase list takes one entry per line and is injected by intensity tier.',
       editorDefault: 'Default: address {address} / self-name {selfName}',
       deleteConfirm: 'Delete “{name}”?',
       saveFailed: 'Could not save. Please try again.',
@@ -602,6 +608,16 @@ window.__ModuleLoader__.load({
                     label(t('previewRuntime'), chars),
                   ),
                   h('pre', { className: 'pm-prompt' }, prompt === '' ? t('previewEmpty') : prompt),
+                  typeof mode.lexiconCount === 'number' && mode.lexiconCount > 0
+                    ? h(
+                        'div',
+                        { className: 'pm-preview-label pm-preview-lexicon' },
+                        t('lexiconPreview', {
+                          count: mode.lexiconCount,
+                          injected: typeof mode.lexiconInjected === 'number' ? mode.lexiconInjected : 0,
+                        }),
+                      )
+                    : null,
                 ),
                 h('div', { className: 'pm-preview-total' }, t('previewTotal', { count: total })),
               ),
@@ -1145,6 +1161,20 @@ window.__ModuleLoader__.load({
             onChange: (event) => update({ body: event.target.value }),
           }),
         ),
+        h(
+          'label',
+          { className: 'pm-field' },
+          h('span', { className: 'pm-field-label' }, t('lexicon')),
+          h('textarea', {
+            className: 'pm-textarea pm-textarea-lexicon',
+            value: editor.lexicon ?? '',
+            rows: 4,
+            maxLength: 600,
+            placeholder: t('lexiconHint'),
+            onChange: (event) => update({ lexicon: event.target.value }),
+          }),
+          h('span', { className: 'pm-field-hint' }, t('lexiconHint')),
+        ),
         h('p', { className: 'pm-editor-hint' }, t('editorHint')),
         h(
           'p',
@@ -1660,7 +1690,8 @@ window.__ModuleLoader__.load({
           address: mode.address ?? '',
           selfName: mode.selfName ?? '',
           body: mode.body ?? '',
-          defaults: mode.defaults ?? { address: '', selfName: '', prompt: '' },
+          lexicon: mode.lexicon ?? '',
+          defaults: mode.defaults ?? { address: '', selfName: '', prompt: '', lexicon: '' },
         })
         setEditorError(null)
         setDeleteError(null)
@@ -1683,10 +1714,12 @@ window.__ModuleLoader__.load({
           address: defaults.address,
           selfName: defaults.selfName,
           body: defaults.prompt,
+          lexicon: defaults.lexicon ?? '',
           defaults: {
             address: defaults.address,
             selfName: defaults.selfName,
             prompt: defaults.prompt,
+            lexicon: defaults.lexicon ?? '',
           },
         })
         setEditorError(null)
@@ -1707,6 +1740,7 @@ window.__ModuleLoader__.load({
                 address: current.defaults.address,
                 selfName: current.defaults.selfName,
                 body: current.defaults.prompt,
+                lexicon: current.defaults.lexicon ?? '',
               },
         )
         setEditorError(null)
@@ -1724,6 +1758,7 @@ window.__ModuleLoader__.load({
             address: editor.address,
             selfName: editor.selfName,
             prompt: editor.body,
+            lexicon: editor.lexicon ?? '',
           }))
           if (editor.isNew && data.saved !== null && typeof data.saved?.id === 'string') {
             data = normalizePayload(await postRoute('select', { id: data.saved.id }))
@@ -1967,6 +2002,9 @@ window.__ModuleLoader__.load({
       .pm-input, .pm-textarea { width:100%; box-sizing:border-box; padding:7px 10px; border:1px solid var(--dsw-alias-border-l2); border-radius:8px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-primary); font:inherit; font-size:13px; line-height:20px; }
       .pm-input:disabled { opacity:.6; cursor:default; }
       .pm-textarea { resize:vertical; min-height:120px; font-family:var(--ds-font-family-code); font-size:12px; line-height:18px; white-space:pre-wrap; }
+.pm-textarea-lexicon { min-height:80px; }
+.pm-field-hint { color:var(--dsw-alias-label-tertiary); font-size:11px; line-height:16px; }
+.pm-preview-lexicon { margin-top:2px; }
       .pm-editor-hint, .pm-editor-default { margin:0; color:var(--dsw-alias-label-tertiary); font-size:12px; line-height:18px; }
       .pm-editor-error { margin:0; color:var(--dsw-alias-state-error-primary); font-size:12px; line-height:18px; }
       .pm-inline-error { margin:0; color:var(--dsw-alias-state-error-primary); font-size:12px; line-height:18px; }

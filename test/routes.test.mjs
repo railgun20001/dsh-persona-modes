@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import { createRouteHandler, ROUTE_HEADER, ROUTE_PATH } from '../src/routes.js'
 import { createStore } from '../src/store.js'
 import { createErrorLog } from '../src/errors.js'
-import { MODES } from '../src/modes.js'
+import { getMode, MODES } from '../src/modes.js'
 
 /**
  * 造一个请求流。
@@ -260,6 +260,40 @@ test('save 保存内置覆盖、reset 恢复默认', async () => {
     }))
     assert.equal(reset.status, 200)
     assert.equal(reset.body.modes.find((mode) => mode.id === 'catgirl').address, '主人')
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('save 保存口癖词表覆盖，reset 一并恢复默认', async () => {
+  const temp = tempStore()
+  try {
+    const handler = createRouteHandler(temp.store, { version: '9.9.9' })
+    const doubao = getMode('doubao')
+    const saved = await invoke(handler, makeRequest({
+      action: 'save',
+      headers: SIGNED,
+      body: JSON.stringify({
+        id: 'doubao',
+        address: '你',
+        selfName: '我',
+        prompt: doubao.prompt,
+        lexicon: '俺寻思\n好嘞',
+      }),
+    }))
+    assert.equal(saved.status, 200)
+    const savedView = saved.body.modes.find((mode) => mode.id === 'doubao')
+    assert.equal(savedView.lexicon, '俺寻思\n好嘞')
+    assert.equal(savedView.lexiconCount, 2)
+    assert.equal(savedView.defaults.lexicon, doubao.lexicon, '内置默认词表要原样回传，供「恢复默认」使用')
+
+    const reset = await invoke(handler, makeRequest({
+      action: 'reset',
+      headers: SIGNED,
+      body: JSON.stringify({ id: 'doubao' }),
+    }))
+    assert.equal(reset.status, 200)
+    assert.equal(reset.body.modes.find((mode) => mode.id === 'doubao').lexicon, doubao.lexicon)
   } finally {
     temp.cleanup()
   }

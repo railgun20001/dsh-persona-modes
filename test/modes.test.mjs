@@ -17,7 +17,10 @@ import {
   isModeId,
   LEXICON_FREQUENCY_TEXT,
   lexiconLines,
+  MAX_LEXICON_ITEM,
+  MAX_LEXICON_ITEMS,
   MODES,
+  parseLexicon,
   normalizeModeId,
   PERSONA_BOUNDARY,
   PERSONA_CONTEXT_ORDER,
@@ -438,32 +441,44 @@ test('豆包取大众印象的甜妹口吻与「豆包体」，认错必须真�
   assert.ok(high.length >= 185 && high.length <= 310, `高档 ${high.length} 字越界`)
 })
 
+test('parseLexicon 按行与分号拆分，不拆顿号', () => {
+  // 一行一条是主用法；词条自己带顿号时不能被拆碎。
+  assert.deepEqual(parseLexicon('最直白、最不绕弯\n一句话讲透'), ['最直白、最不绕弯', '一句话讲透'])
+  assert.deepEqual(parseLexicon('一；二;三'), ['一', '二', '三'])
+  assert.deepEqual(parseLexicon('  一  \n\n  \n二  '), ['一', '二'])
+  assert.deepEqual(parseLexicon(''), [])
+  assert.deepEqual(parseLexicon(undefined), [])
+  assert.deepEqual(parseLexicon(['一', '二']), ['一', '二'])
+  // 条数与单条长度都有上限：词表是可编辑字段，不能让它在上下文里无限长。
+  assert.equal(parseLexicon(Array.from({ length: 40 }, (_, index) => `词${index}`).join('\n')).length, MAX_LEXICON_ITEMS)
+  assert.equal(parseLexicon('长'.repeat(80))[0].length, MAX_LEXICON_ITEM)
+})
+
 test('口癖词表按档位开放，并用频率约束防止成套堆叠', () => {
   const mode = getMode('doubao')
-  assert.ok(Array.isArray(mode.lexicon), '豆包应带口癖词表')
-  assert.ok(mode.lexicon.length >= 5, '口癖词表至少 5 条')
+  assert.equal(typeof mode.lexicon, 'string', '豆包应带口癖词表（可编辑文本，一行一条）')
+  const phrases = parseLexicon(mode.lexicon)
+  assert.ok(phrases.length >= 5, '口癖词表至少 5 条')
   // 词条是「词与短语」而不是台词：单条不超过 12 字、不含换行、不重复。
-  for (const item of mode.lexicon) {
-    assert.equal(typeof item, 'string')
-    assert.ok(item.trim().length > 0, '词条不能为空')
+  for (const item of phrases) {
     assert.ok(item.length <= 12, `词条过长：${item}`)
     assert.doesNotMatch(item, /\n/u)
   }
-  assert.equal(new Set(mode.lexicon).size, mode.lexicon.length, '词条重复')
+  assert.equal(new Set(phrases).size, phrases.length, '词条重复')
+  assert.equal(mode.lexicon.split('\n').length, phrases.length, '内置词表应一行一条')
 
   // 低档零注入：代码与长文任务的默认档一个字都不多花。
-  const low = renderPersonaPrompt('doubao')
-  assert.doesNotMatch(low, /口癖/u)
+  assert.doesNotMatch(renderPersonaPrompt('doubao'), /口癖/u)
 
   // 中档只取前 2 条，并紧跟频率约束。
   const medium = renderPersonaPrompt('doubao', { intensity: 'medium' })
-  assert.ok(medium.includes(`口癖：${mode.lexicon.slice(0, 2).join('；')}`), '中档应注入前两条口癖')
-  assert.ok(!medium.includes(mode.lexicon[2]), '中档不应注入第三条之后的词条')
+  assert.ok(medium.includes(`口癖：${phrases.slice(0, 2).join('；')}`), '中档应注入前两条口癖')
+  assert.ok(!medium.includes(phrases[2]), '中档不应注入第三条之后的词条')
   assert.match(medium, new RegExp(`^${LEXICON_FREQUENCY_TEXT}$`, 'mu'))
 
   // 高档给全量词表，且顺序是「词表 → 频率约束 → 强度标签」。
   const high = renderPersonaPrompt('doubao', { intensity: 'high' })
-  assert.ok(high.includes(`口癖：${mode.lexicon.join('；')}`), '高档应注入全部词条')
+  assert.ok(high.includes(`口癖：${phrases.join('；')}`), '高档应注入全部词条')
   assert.ok(high.indexOf('口癖：') < high.indexOf('口癖频率：'), '频率约束应跟在词表之后')
   assert.ok(high.indexOf('口癖频率：') < high.indexOf('语气强度：高'), '口癖块应在强度标签之前')
 
@@ -474,23 +489,71 @@ test('口癖词表按档位开放，并用频率约束防止成套堆叠', () =>
   // 没有词表的模式完全不受影响。
   assert.doesNotMatch(renderPersonaPrompt('catgirl', { intensity: 'high' }), /口癖/u)
 
-  // 用户覆盖提示词后不再追加内置口癖：视为用户自己的文案。
+  // 坏输入不抛错：词表缺失、空、空白词条都只当作「没有口癖」。
+  assert.deepEqual(lexiconLines(undefined, 'high'), [])
+  assert.deepEqual(lexiconLines('', 'high'), [])
+  assert.deepEqual(lexiconLines('  ；\n ', 'high'), [])
+  assert.deepEqual(lexiconLines('一句话讲透', 'low'), [])
+  assert.deepEqual(lexiconLines('一句话讲透', 'high'), ['口癖：一句话讲透', LEXICON_FREQUENCY_TEXT])
+})
+
+test('口癖词表可编辑：覆盖值优先、删空即失效、自定义人格同样支持', () => {
+  const doubao = getMode('doubao')
+  const base = { address: doubao.address, selfName: doubao.selfName, prompt: doubao.prompt }
+
+  // 覆盖词表：用户写什么就用什么，内置词条一条都不留。
   const overridden = renderPersonaPrompt('doubao', {
     intensity: 'high',
-    overrides: { doubao: { address: '你', selfName: '我', prompt: '【人格载入】\n自定义豆包' } },
+    overrides: { doubao: { ...base, lexicon: '俺寻思\n好嘞' } },
   })
-  assert.doesNotMatch(overridden, /口癖/u)
+  assert.ok(overridden.includes('口癖：俺寻思；好嘞'), '覆盖后的词表应生效')
+  assert.ok(!overridden.includes('最直白、最不绕弯'), '覆盖后不应残留内置词条')
   assert.match(overridden, /^称呼你$/mu)
 
-  // 坏输入不抛错：词表缺失、空数组、空白词条都只当作「没有口癖」。
-  assert.deepEqual(lexiconLines(undefined, 'high'), [])
-  assert.deepEqual(lexiconLines([], 'high'), [])
-  assert.deepEqual(lexiconLines(['  ', ''], 'high'), [])
-  assert.deepEqual(lexiconLines(['一句话讲透'], 'low'), [])
-  assert.deepEqual(lexiconLines(['一句话讲透'], 'high'), [
-    '口癖：一句话讲透',
-    LEXICON_FREQUENCY_TEXT,
-  ])
+  // 删空词表就是真的没有口癖：不必改提示词，也不会被系统塞回来。
+  const cleared = renderPersonaPrompt('doubao', {
+    intensity: 'high',
+    overrides: { doubao: { ...base, lexicon: '' } },
+  })
+  assert.doesNotMatch(cleared, /口癖/u)
+  assert.match(cleared, /^甜妹口吻$/mu, '提示词本体不受词表影响')
+
+  // 只覆盖称呼时，词表仍回落到内置值（旧覆盖没有 lexicon 字段也走这条）。
+  const legacy = renderPersonaPrompt('doubao', {
+    intensity: 'high',
+    overrides: { doubao: { address: '伙伴', selfName: '我', prompt: doubao.prompt } },
+  })
+  assert.ok(legacy.includes('口癖：最直白、最不绕弯'), '未覆盖词表时应回落到内置词表')
+  assert.match(legacy, /^称呼伙伴$/mu)
+
+  // 自定义人格同样可以用词表，分号也能分隔，并按档位只注入前 2 条。
+  const view = buildModesView('custom-x', {
+    intensity: 'medium',
+    customModes: [
+      {
+        id: 'custom-x',
+        emoji: '🧩',
+        nameZh: '测试人格',
+        nameEn: 'Test',
+        summaryZh: '测试人格',
+        summaryEn: 'Test',
+        accent: '#0ea5e9',
+        defaults: { address: '你', selfName: '我', prompt: '【人格载入】\n测试', lexicon: '一句；两句；三句' },
+        values: { address: '你', selfName: '我', prompt: '【人格载入】\n测试', lexicon: '一句；两句；三句' },
+      },
+    ],
+  })
+  const custom = view.modes.find((mode) => mode.id === 'custom-x')
+  assert.equal(custom.lexiconCount, 3)
+  assert.equal(custom.lexiconInjected, 2, '中档注入前 2 条')
+  assert.ok(custom.prompt.includes('口癖：一句；两句'))
+
+  // 视图把词表原文、条数与当前注入条数一并交给客户端，设置页据此展示与编辑。
+  const doubaoView = buildModesView('doubao').modes.find((mode) => mode.id === 'doubao')
+  assert.equal(doubaoView.lexicon, doubao.lexicon)
+  assert.equal(doubaoView.lexiconCount, parseLexicon(doubao.lexicon).length)
+  assert.equal(doubaoView.lexiconInjected, 0, '低档不注入')
+  assert.equal(doubaoView.defaults.lexicon, doubao.lexicon)
 })
 
 test('女仆（嫌弃脸）改版为嘴上嫌弃但活照干，不越界护栏保留', () => {
@@ -614,6 +677,7 @@ test('resolveMode 叠加内置覆盖值，并带回默认值', () => {
     address: '主人',
     selfName: getMode('catgirl').selfName,
     prompt: getMode('catgirl').tone,
+    lexicon: '',
   })
 })
 

@@ -65,8 +65,8 @@
     "manifestVersion": 1
   },
   "scripts": {
-    "test": "node --test test/modes.test.mjs test/store.test.mjs test/routes.test.mjs test/apply.test.mjs test/client.test.mjs test/usage.test.mjs test/errors.test.mjs",
-    "check": "node --test test/modes.test.mjs test/store.test.mjs test/routes.test.mjs test/apply.test.mjs test/client.test.mjs test/usage.test.mjs test/errors.test.mjs",
+    "test": "node --test test/modes.test.mjs test/store.test.mjs test/routes.test.mjs test/apply.test.mjs test/client.test.mjs test/usage.test.mjs test/usage-cache.test.mjs test/errors.test.mjs",
+    "check": "node --test test/modes.test.mjs test/store.test.mjs test/routes.test.mjs test/apply.test.mjs test/client.test.mjs test/usage.test.mjs test/usage-cache.test.mjs test/errors.test.mjs",
     "prepublishOnly": "npm test"
   },
   "engines": {

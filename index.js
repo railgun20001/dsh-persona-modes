@@ -23,6 +23,7 @@
  */
 
 import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 
 import {
   getMode,
@@ -38,7 +39,7 @@ import {
 import { createErrorLog } from './src/errors.js'
 import { createRouteHandler, PLUGIN_ID, ROUTE_PATH } from './src/routes.js'
 import { createStore } from './src/store.js'
-import { createUsage } from './src/usage.js'
+import { createUsage, USAGE_CACHE_FILE } from './src/usage.js'
 
 /** Cordis 插件名（诊断与 patch 行定位用）。 */
 export const name = 'persona-modes'
@@ -101,9 +102,23 @@ export function apply(ctx, config = {}) {
   // 状态里持久化的 debug 开关要在启动时同步到日志。
   errors.setDebug(store.getDebug())
 
+  // 统计缓存与状态文件同目录：`stateFile` 被覆盖（测试、多实例）时缓存也跟着
+  // 隔离，避免两个实例共用一个文件、互相把对方的缓存删掉。
+  const stateFile = typeof config.stateFile === 'string' && config.stateFile !== '' ? config.stateFile : undefined
+  const cacheFile = stateFile === undefined ? USAGE_CACHE_FILE : join(dirname(stateFile), 'usage-cache.json')
+
   // 匿名计数客户端：只上报人格 id，失败会写进运行日志（不再静默）；是否参与由
   // store 里的开关决定。User-Agent 不带版本号，尽量少暴露可关联信息。
-  const usage = createUsage({ userAgent: PLUGIN_ID, journal: errors })
+  // 缓存文件跟随「显示统计」：关掉后既不读也不写，避免留下统计痕迹。
+  const usage = createUsage({
+    userAgent: PLUGIN_ID,
+    journal: errors,
+    file: cacheFile,
+    persist: () => store.getUsage().fetch === true,
+  })
+  // 上次关着「显示统计」退出时可能还留着旧缓存：启动时补删一次，让
+  // 「关了就不留痕迹」不只对当次会话生效。
+  if (store.getUsage().fetch !== true) usage.discard()
 
   /**
    * 按「对话轮次」记一次使用。

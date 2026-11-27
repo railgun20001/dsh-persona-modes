@@ -76,7 +76,7 @@ window.__ModuleLoader__.load({
       usageFetch: '显示统计',
       usageColon: '：',
       usageRefresh: '刷新',
-      usageNote: '关闭「参与统计」后不再上报；关闭「显示统计」后不再获取或显示角标；已上报的聚合计数无法撤回。数字每日走缓存，点「刷新」立即更新。',
+      usageNote: '关闭「参与统计」后不再上报；关闭「显示统计」后不再获取或显示角标，并删除本地缓存；已上报的聚合计数无法撤回。数字每日走缓存，点「刷新」立即更新。',
       usageBadge: '热度 {count}',
       usageBadgeTitle: '匿名统计：热度 {count}，仅供参考',
       usageCountMax: '99,999+',
@@ -156,7 +156,7 @@ window.__ModuleLoader__.load({
       usageFetch: 'Show counts',
       usageColon: ': ',
       usageRefresh: 'Refresh',
-      usageNote: 'Turning off “Contribute counts” stops reporting; turning off “Show counts” stops fetching and hides badges; counts already sent cannot be withdrawn. Numbers come from a daily cache; press “Refresh” to update immediately.',
+      usageNote: 'Turning off “Contribute counts” stops reporting; turning off “Show counts” stops fetching and hides badges and deletes the local cache; counts already sent cannot be withdrawn. Numbers come from a daily cache; press “Refresh” to update immediately.',
       usageBadge: 'Heat {count}',
       usageBadgeTitle: 'Anonymous stats: heat {count}, indicative only',
       usageCountMax: '99,999+',
@@ -312,6 +312,24 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * 判断一次 usage 响应之后是否需要「补取」。
+     *
+     * 宿主返回 `stale` 表示数字来自已过期的本地缓存：这时页面已经有旧数字可
+     * 显示，不需要把状态置成错误。若 `refreshing` 为真，说明宿主正在后台读
+     * 第三方，短延迟再取一次即可拿到新值；若只有 `retryAfterMs`，说明后台
+     * 失败且熔断开着，按退避走通用重试；两者都没有就不再追。
+     *
+     * @param {unknown} data `/usage` 响应。
+     * @returns {{ kind: 'stale' | 'retry' } | null} 补取方式；null 表示不必再取。
+     */
+    function usageFollowUp(data) {
+      if (data === null || typeof data !== 'object' || data.stale !== true) return null
+      if (data.refreshing === true) return { kind: 'stale' }
+      if (typeof data.retryAfterMs === 'number' && data.retryAfterMs > 0) return { kind: 'retry' }
+      return null
+    }
+
+    /**
      * 把宿主返回的调试日志筛成可渲染的形状。
      *
      * 只认字符串字段，且条数不超过宿主声明的上限：日志面板不信任远端数据，
@@ -388,6 +406,14 @@ window.__ModuleLoader__.load({
 
     /** 连续失败后最多自动重试的次数；之后只响应手动「刷新」。 */
     const USAGE_RETRY_MAX = 5
+
+    /**
+     * 本地缓存过期、但宿主已用旧数字先顶上时的补取间隔。
+     *
+     * 宿主在后台刷新（SWR），通常一两秒内就有新值；稍等再取一次，页面先显示
+     * 旧数字、随后静默校正，不会出现「先空白、几秒后才有角标」。
+     */
+    const USAGE_STALE_REFRESH_DELAY_MS = 1_500
 
     /**
      * 发一条宿主路由请求。
@@ -1454,19 +1480,29 @@ window.__ModuleLoader__.load({
        * 安排一次自动重试：熔断开着按 `retryAfterMs`（宿主给的退避余量），
        * 否则按默认间隔；连续失败超过上限就停，交给手动「刷新」。
        *
+       * 也可以指定 `delayMs`（SWR 补取用）：旧数字已经显示在页面上，只需稍等
+       * 一次就能拿到后台刷新的结果；这仍计入重试上限，避免死循环。
+       * `force` 为 false 时补取走普通读取（命中宿主缓存），不强制重打第三方。
+       *
        * @param {object} [data] 最近一次 usage 响应，可能带 `retryAfterMs`。
+       * @param {number} [delayMs] 显式等待毫秒数。
+       * @param {boolean} [force] 是否强制跳过宿主缓存（默认是）。
        */
-      const scheduleUsageRetry = (data) => {
+      const scheduleUsageRetry = (data, delayMs, force = true) => {
         clearUsageRetry()
         if (usageRetries.current >= USAGE_RETRY_MAX) return
         usageRetries.current += 1
         const hinted = typeof data?.retryAfterMs === 'number' && data.retryAfterMs > 0
-        const delay = hinted ? Math.min(data.retryAfterMs + 1_000, USAGE_RETRY_MAX_DELAY_MS) : USAGE_RETRY_DELAY_MS
+        const delay = typeof delayMs === 'number' && delayMs > 0
+          ? delayMs
+          : hinted
+            ? Math.min(data.retryAfterMs + 1_000, USAGE_RETRY_MAX_DELAY_MS)
+            : USAGE_RETRY_DELAY_MS
         setRetryPending(true)
         usageRetryTimer.current = setTimeout(() => {
           usageRetryTimer.current = null
           setRetryPending(false)
-          void refreshCounts()
+          void refreshCounts(force)
         }, delay)
       }
 
@@ -1476,6 +1512,21 @@ window.__ModuleLoader__.load({
           // 开关在别处（比如另一个窗口）被关掉：跟随它，不再显示。
           setCounts(null)
           setCountsState('off')
+          return
+        }
+        const followUp = usageFollowUp(data)
+        if (followUp !== null) {
+          // 旧缓存先顶上：数字照常显示，宿主在后台刷新。只有确认后台还在读
+          // 时才短延迟补取；后台已失败且熔断开着则按退避走通用重试。
+          setCounts(normalizeCounts(data, view.data.modes))
+          setCountsState('ready')
+          if (followUp.kind === 'stale') {
+            // 补取走普通读取：后台可能刚好写完缓存，直接命中即可；命中不了
+            // 宿主也会等那一轮后台刷新，不必再强制打一次第三方。
+            scheduleUsageRetry(data, USAGE_STALE_REFRESH_DELAY_MS, false)
+          } else {
+            scheduleUsageRetry(data)
+          }
           return
         }
         if (typeof data?.fetchedAt !== 'number') {
@@ -1492,8 +1543,16 @@ window.__ModuleLoader__.load({
         setCountsState('ready')
       }
 
-      /** 手动刷新：跳过宿主缓存重新读取；人格多时宿主会分批限速，需要等更久。 */
-      const refreshCounts = async () => {
+      /**
+       * 读一次计数。
+       *
+       * 手动「刷新」走 `force = true`：跳过宿主缓存重新读取，人格多时宿主会
+       * 分批限速，需要等更久。SWR 补取传 `force = false`：只取宿主已经刷新好的
+       * 结果，命中不了就让宿主去等那一轮后台读取，不额外再打第三方。
+       *
+       * @param {boolean} [force] 是否强制跳过宿主缓存（默认是）。
+       */
+      const refreshCounts = async (force = true) => {
         if (view.phase !== 'ready' || view.data?.usage?.fetch !== true) return
         if (countsState === 'loading' || usagePending) return
         setCountsState('loading')
@@ -1505,7 +1564,11 @@ window.__ModuleLoader__.load({
         }
         pullLogs()
         try {
-          applyUsageResponse(await postRoute('usage', { refresh: true }, { timeoutMs: USAGE_REFRESH_TIMEOUT_MS }))
+          applyUsageResponse(await postRoute(
+            'usage',
+            force ? { refresh: true } : {},
+            { timeoutMs: USAGE_REFRESH_TIMEOUT_MS },
+          ))
         } catch {
           setCountsState('error')
           scheduleUsageRetry(null)
@@ -2010,6 +2073,7 @@ window.__ModuleLoader__.load({
       DebugSection,
       normalizePayload,
       normalizeCounts,
+      usageFollowUp,
       normalizeLogs,
       formatCount,
       formatTime,

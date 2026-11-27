@@ -685,3 +685,91 @@ test('请求体不合法时留下日志', async () => {
     temp.cleanup()
   }
 })
+
+test('usage 把 stale/refreshing 透传给客户端', async () => {
+  const temp = tempStore()
+  try {
+    const handler = createRouteHandler(temp.store, {
+      version: '9.9.9',
+      usage: {
+        async read() {
+          return { counts: { catgirl: 5 }, at: 1_000, partial: false, stale: true, refreshing: true }
+        },
+      },
+    })
+    const result = await invoke(handler, makeRequest({ action: 'usage', headers: SIGNED }))
+    assert.equal(result.status, 200)
+    assert.equal(result.body.stale, true)
+    assert.equal(result.body.refreshing, true)
+    assert.deepEqual(result.body.counts, { catgirl: 5 })
+    assert.equal(result.body.fetchedAt, 1_000, '旧数据也带上次读取时间')
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('stale 且熔断开启时仍带回 retryAfterMs', async () => {
+  const temp = tempStore()
+  try {
+    const handler = createRouteHandler(temp.store, {
+      version: '9.9.9',
+      usage: {
+        async read() {
+          return { counts: { catgirl: 5 }, at: 1_000, partial: true, stale: true, refreshing: false }
+        },
+        status() {
+          return {
+            enabled: true,
+            cachedAt: 1_000,
+            breakerOpenUntil: Date.now() + 30_000,
+            refreshing: false,
+          }
+        },
+      },
+    })
+    const result = await invoke(handler, makeRequest({ action: 'usage', headers: SIGNED }))
+    assert.equal(result.body.stale, true)
+    assert.equal(result.body.refreshing, undefined)
+    assert.equal(typeof result.body.retryAfterMs, 'number')
+    assert.ok(result.body.retryAfterMs > 0 && result.body.retryAfterMs <= 40_000)
+  } finally {
+    temp.cleanup()
+  }
+})
+
+test('关闭「显示统计」时调用 discard 删除本地缓存', async () => {
+  const temp = tempStore()
+  try {
+    let discarded = 0
+    const handler = createRouteHandler(temp.store, {
+      version: '9.9.9',
+      usage: {
+        async read() {
+          return { counts: {}, at: 1, partial: false }
+        },
+        discard() {
+          discarded += 1
+        },
+      },
+    })
+
+    const reportOnly = await invoke(handler, makeRequest({
+      action: 'usage/prefs',
+      headers: SIGNED,
+      body: JSON.stringify({ report: false }),
+    }))
+    assert.equal(reportOnly.status, 200)
+    assert.equal(discarded, 0, '只关参与统计不应删缓存')
+
+    const off = await invoke(handler, makeRequest({
+      action: 'usage/prefs',
+      headers: SIGNED,
+      body: JSON.stringify({ fetch: false }),
+    }))
+    assert.equal(off.status, 200)
+    assert.equal(off.body.usage.fetch, false)
+    assert.equal(discarded, 1, '关闭显示统计应删除缓存')
+  } finally {
+    temp.cleanup()
+  }
+})

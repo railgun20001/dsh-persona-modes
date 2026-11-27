@@ -251,17 +251,21 @@ export function readStateFile(file = STATE_FILE) {
 }
 
 /**
- * 原子写状态文件。
+ * 原子写一个 JSON 文件：先写同目录临时文件，再改名覆盖目标。
  *
- * @param {object} state 完整状态。
+ * 读者要么看到旧的完整文件、要么看到新的完整文件，不会读到写了一半的内容。
+ * 状态文件与统计缓存共用这一份实现：两者都需要「宁可没有，也不要坏数据」。
+ * 写失败时尽力清掉临时文件并返回 false，降级交给调用方决定（绝不抛错）。
+ *
  * @param {string} file 目标路径。
+ * @param {unknown} value 要序列化的值。
  * @returns {boolean} 是否写入成功。
  */
-export function writeStateFile(state, file = STATE_FILE) {
+export function writeJsonFile(file, value) {
   const temporary = `${file}.${process.pid}.tmp`
   try {
     mkdirSync(dirname(file), { recursive: true })
-    writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+    writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
     renameSync(temporary, file)
     return true
   } catch {
@@ -272,6 +276,17 @@ export function writeStateFile(state, file = STATE_FILE) {
     }
     return false
   }
+}
+
+/**
+ * 原子写状态文件。
+ *
+ * @param {object} state 完整状态。
+ * @param {string} file 目标路径。
+ * @returns {boolean} 是否写入成功。
+ */
+export function writeStateFile(state, file = STATE_FILE) {
+  return writeJsonFile(file, state)
 }
 
 /**

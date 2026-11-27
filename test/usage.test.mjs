@@ -6,15 +6,20 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import {
   createUsage,
   isCountableId,
+  restoreCache,
   USAGE_BASE_URL,
   USAGE_BREAKER_MS,
   USAGE_BUCKET_CAPACITY,
   USAGE_BUCKET_WINDOW_MS,
   USAGE_CACHE_MS,
+  USAGE_CACHE_VERSION,
   USAGE_MAX_BODY,
   USAGE_NAMESPACE,
   USAGE_PARTIAL_CACHE_MS,
@@ -185,7 +190,15 @@ test('read 汇总计数并写长缓存', async () => {
   assert.equal(fake.calls.length, 2, '缓存期内不应重复请求')
 
   time.advance(USAGE_CACHE_MS + 1)
-  await usage.read(['catgirl', 'mom'])
+  const stale = await usage.read(['catgirl', 'mom'])
+  assert.equal(stale.stale, true, '过期缓存应先把旧值交出去')
+  assert.equal(stale.refreshing, true, '同时应有一轮后台刷新在飞')
+  assert.deepEqual(stale.counts, { catgirl: 12, mom: 34 }, '旧值必须完整保留')
+
+  // 再读一次会等到后台刷新完成，拿到新值。
+  const updated = await usage.read(['catgirl', 'mom'])
+  assert.equal(updated.stale, false)
+  assert.equal(updated.partial, false)
   assert.equal(fake.calls.length, 4)
 })
 
@@ -265,9 +278,13 @@ test('read 部分失败标 partial，结果按短 TTL 缓存', async () => {
   assert.equal(calls, 2, '短 TTL 内应直接用缓存')
 
   time.advance(USAGE_PARTIAL_CACHE_MS + 1)
+  const stale = await usage.read(['catgirl', 'mom'])
+  assert.equal(stale.stale, true, '短 TTL 过期后应先把旧值交出去')
+  assert.equal(stale.partial, true)
   const third = await usage.read(['catgirl', 'mom'])
   assert.equal(calls, 4)
   assert.equal(third.partial, true)
+  assert.equal(third.stale, false)
 })
 
 test('read 全部失败时返回 null（无缓存）', async () => {
@@ -373,11 +390,14 @@ test('read 撞上 429 时按一分钟退避并沿用缓存', async () => {
   assert.equal(calls, 2)
   assert.deepEqual(second.counts, { catgirl: 5 })
 
-  // 退避结束、短缓存过期后重新拉取。
+  // 退避结束、短缓存过期后重新拉取：先回旧值，再等后台刷新。
   time.advance(USAGE_PARTIAL_CACHE_MS + 1)
+  const stale = await usage.read(['catgirl', 'mom'])
+  assert.equal(stale.stale, true)
   const third = await usage.read(['catgirl', 'mom'])
   assert.equal(calls, 4)
   assert.equal(third.partial, true)
+  assert.equal(third.stale, false)
 })
 
 test('未显式传 enabled 时，DSH_PERSONA_USAGE=off 生效', async () => {
@@ -530,7 +550,12 @@ test('多个键同时超时只写一条汇总日志，并给出排查方向', as
 test('status 暴露缓存与熔断状态', async () => {
   const fake = fakeFetch(() => jsonResponse({ value: 1 }))
   const usage = createUsage({ fetch: fake.fetch, enabled: true })
-  assert.deepEqual(usage.status(), { enabled: true, cachedAt: null, breakerOpenUntil: null })
+  assert.deepEqual(usage.status(), {
+    enabled: true,
+    cachedAt: null,
+    breakerOpenUntil: null,
+    refreshing: false,
+  })
   await usage.read(['catgirl'])
   assert.equal(typeof usage.status().cachedAt, 'number')
 })

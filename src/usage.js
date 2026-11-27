@@ -6,7 +6,10 @@
  * - 端点硬编码，不支持配置，避免把本机请求变成 SSRF 跳板；
  * - 禁止跟随重定向，只接受 HTTPS 与 JSON，响应体有大小上限；
  * - 所有网络失败都静默降级，绝不影响对话主流程；
- * - 限流、熔断与缓存全部在内存里，不写盘，不在本机留下统计痕迹。
+ * - 限流、熔断在内存里；读取结果**可选落盘**到
+ *   `~/.dsh/persona-modes/usage-cache.json`，只存内置人格 id、公开计数与时间戳，
+ *   用于重启后仍能立刻显示角标；关闭「显示统计」时该文件会被立即删除。
+ *   （2026-11-26 之前是纯内存缓存，不写盘；这是有意的边界变更，口径见 README。）
  *
  * 计数来自 Abacus（`https://abacus.jasoncameron.dev`）：一个无需账号的公共
  * 整数计数器。它的键是可读的，因此计数只适合展示「热度」，不适合作为奖惩依据；
@@ -14,6 +17,11 @@
  *
  * @module dsh-persona-modes/usage
  */
+
+import { readFileSync, unlinkSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { STATE_DIR, writeJsonFile } from './store.js'
 
 /** 计数服务根地址；硬编码，不接受配置覆盖。 */
 export const USAGE_BASE_URL = 'https://abacus.jasoncameron.dev'
@@ -46,6 +54,33 @@ export const USAGE_CACHE_MS = 24 * 60 * 60 * 1_000
 
 /** 部分成功的读取缓存得短一些：失败的那几个键下次能尽快补齐。 */
 export const USAGE_PARTIAL_CACHE_MS = 60 * 60 * 1_000
+
+/**
+ * 统计缓存的落盘文件。
+ *
+ * 与 `state.json` 同目录但**独立成文件**：`state.json` 装的是用户意图，写坏会丢
+ * 设置；缓存是派生数据，丢了重读即可。两者失败后果不对等，不该同生共死。
+ */
+export const USAGE_CACHE_FILE = join(STATE_DIR, 'usage-cache.json')
+
+/** 缓存文件格式版本；结构变化时靠它决定是否迁移或丢弃。 */
+export const USAGE_CACHE_VERSION = 1
+
+/**
+ * 缓存文件里的条目上限。
+ *
+ * 正常只有十来个内置人格；文件可能被手改或写坏，读取时按上限截断，避免一个
+ * 被塞大的文件把内存与渲染拖垮。
+ */
+export const USAGE_CACHE_MAX_ENTRIES = 64
+
+/**
+ * 时间戳容忍窗口：缓存里的 `at` 比「现在」还晚这么多，视为时钟回拨或文件被改。
+ *
+ * 不处理的话 `现在 - at` 会是负数，永远小于 TTL，缓存再也不会过期；这里把未来
+ * 时间戳降级成「已过期」，数字仍先显示，但会立刻触发后台刷新校正。
+ */
+export const USAGE_CLOCK_SKEW_MS = 5 * 60 * 1_000
 
 /** 单批最大请求数：人格再多也只是读得慢，任意 10 秒窗口内的请求数不超过桶容量。 */
 export const USAGE_READ_CHUNK = 10
@@ -104,6 +139,41 @@ export function isCountableId(id) {
  */
 function isCount(value) {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 1_000_000_000
+}
+
+/**
+ * 把磁盘上的缓存文件还原成内存缓存；形状不对就返回 null。
+ *
+ * 文件是「自己写的」，但仍然按**不可信输入**校验：它可能被手改、被旧版本写坏，
+ * 或者来自另一个进程。只接受内置人格 id 与正整数计数，未知键与坏值直接丢弃；
+ * 未来时间戳降级成已过期，避免时钟回拨让缓存永不刷新。
+ *
+ * @param {unknown} data 解析后的文件内容。
+ * @param {number} time 当前时间毫秒。
+ * @returns {{ counts: Record<string, number>, at: number, partial: boolean } | null} 还原结果。
+ */
+export function restoreCache(data, time) {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) return null
+  if (data.version !== USAGE_CACHE_VERSION) return null
+  const at = data.at
+  if (typeof at !== 'number' || !Number.isFinite(at) || at < 0) return null
+  const source = data.counts
+  if (source === null || typeof source !== 'object' || Array.isArray(source)) return null
+  /** @type {Record<string, number>} */
+  const counts = {}
+  let kept = 0
+  for (const [id, value] of Object.entries(source)) {
+    if (kept >= USAGE_CACHE_MAX_ENTRIES) break
+    if (!isCountableId(id) || !isCount(value) || value <= 0) continue
+    counts[id] = value
+    kept += 1
+  }
+  return {
+    counts,
+    // 未来时间戳不拒绝：数字仍值得先显示，但按「已过期」处理，立刻走后台刷新。
+    at: at > time + USAGE_CLOCK_SKEW_MS ? 0 : at,
+    partial: data.partial === true,
+  }
 }
 
 /**
@@ -209,13 +279,19 @@ function reportReadFailures(list, ok, record) {
  *   enabled?: boolean,
  *   userAgent?: string,
  *   sleep?: (ms: number) => Promise<void>,
+ *   file?: string | null,
+ *   persist?: () => boolean,
  *   journal?: { record: (scope: string, error: unknown, detail?: unknown) => unknown, note: (scope: string, message: unknown, detail?: unknown) => unknown },
  * }} [options] 注入项；测试用假 fetch、假时钟与假 sleep，绝不访问真实服务。
  *   `journal` 是调试日志：失败必须留下记录，成功与流程细节在调试打开时也记录。
+ *   `file` 是本地缓存路径，**默认 null（纯内存）**：单测不传就不会碰用户的
+ *   `~/.dsh`；宿主半传 `USAGE_CACHE_FILE` 才启用落盘。`persist` 是动态开关，
+ *   默认恒真，宿主半用它跟随「显示统计」——关闭时既不读也不写。
  * @returns {{
  *   record: (id: string) => Promise<boolean>,
- *   read: (ids: string[], settings?: { refresh?: boolean }) => Promise<{ counts: Record<string, number>, at: number, partial: boolean } | null>,
- *   status: () => { enabled: boolean, cachedAt: number | null, breakerOpenUntil: number | null },
+ *   read: (ids: string[], settings?: { refresh?: boolean }) => Promise<{ counts: Record<string, number>, at: number, partial: boolean, stale: boolean, refreshing: boolean } | null>,
+ *   discard: () => void,
+ *   status: () => { enabled: boolean, cachedAt: number | null, breakerOpenUntil: number | null, refreshing: boolean },
  * }} 计数客户端。
  */
 export function createUsage(options = {}) {
@@ -226,6 +302,10 @@ export function createUsage(options = {}) {
   const enabled = options.enabled === undefined
     ? process.env.DSH_PERSONA_USAGE !== 'off'
     : options.enabled !== false
+  // 缓存文件：默认不落盘，由宿主半显式传入路径；测试天然隔离。
+  const file = typeof options.file === 'string' && options.file !== '' ? options.file : null
+  // 动态持久化开关：宿主半用它跟随「显示统计」；关闭时连读盘都不做。
+  const canPersist = typeof options.persist === 'function' ? options.persist : () => true
   const userAgent = typeof options.userAgent === 'string' && options.userAgent !== ''
     ? options.userAgent
     : 'dsh-persona-modes'
@@ -275,6 +355,89 @@ export function createUsage(options = {}) {
   let cache = null
   /** 同一时刻只允许一轮读取在飞，避免两个设置页同时打开时重复打第三方。 */
   let inflightRead = null
+  /** 是否已经尝试过从磁盘恢复；只读一次，避免每次读取都摸盘。 */
+  let cacheLoaded = false
+  /** 写盘失败只记一条日志；成功后复位，下次再坏还能再记。 */
+  let persistWarned = false
+
+  /**
+   * 从磁盘恢复缓存；只做一次，失败一律静默降级。
+   *
+   * 关闭「显示统计」时不读盘：用户关掉之后，本机不该再因为统计去碰文件。
+   * 文件损坏（JSON 不合法）只记流程日志；读文件本身的 I/O 错误才记错误日志。
+   */
+  function loadCache() {
+    if (cacheLoaded) return
+    cacheLoaded = true
+    if (file === null || !canPersist()) return
+    let raw = ''
+    try {
+      raw = readFileSync(file, 'utf8')
+    } catch (error) {
+      if (error?.code !== 'ENOENT') report('usage.cache', '本地统计缓存读取失败', { code: error?.code ?? null })
+      return
+    }
+    let parsed = null
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      trace('usage.cache', '本地统计缓存不是合法 JSON，已忽略')
+      return
+    }
+    const restored = restoreCache(parsed, now())
+    if (restored === null) {
+      trace('usage.cache', '本地统计缓存形状不符，已忽略')
+      return
+    }
+    cache = restored
+    trace('usage.cache', '已恢复本地统计缓存', {
+      at: restored.at,
+      partial: restored.partial,
+      ids: Object.keys(restored.counts).length,
+    })
+  }
+
+  /**
+   * 把内存缓存原子写回磁盘；关闭「显示统计」时跳过。
+   *
+   * 只在第三方读取成功后调用：一天最多几次，不需要节流。写失败不影响本次
+   * 显示，只记一条日志（不刷屏），下次读取成功会重试写入。
+   */
+  function persistCache() {
+    if (file === null || cache === null || !canPersist()) return
+    const payload = {
+      version: USAGE_CACHE_VERSION,
+      at: cache.at,
+      partial: cache.partial,
+      counts: { ...cache.counts },
+    }
+    if (writeJsonFile(file, payload)) {
+      persistWarned = false
+      return
+    }
+    if (!persistWarned) {
+      persistWarned = true
+      report('usage.cache', '本地统计缓存写入失败', {})
+    }
+  }
+
+  /**
+   * 丢弃缓存：清掉内存并删除文件。
+   *
+   * 关闭「显示统计」时调用——既然不再显示，本机就不该留着统计痕迹。删除失败
+   * （只读目录等）只记日志；标记 `cacheLoaded` 让后续读取不再从文件恢复。
+   */
+  function discard() {
+    cache = null
+    cacheLoaded = true
+    persistWarned = false
+    if (file === null) return
+    try {
+      unlinkSync(file)
+    } catch (error) {
+      if (error?.code !== 'ENOENT') report('usage.cache', '本地统计缓存删除失败', { code: error?.code ?? null })
+    }
+  }
 
   /**
    * 按时间补充令牌。
@@ -408,12 +571,42 @@ export function createUsage(options = {}) {
   }
 
   /**
+   * 判断缓存是否仍然新鲜；未来时间戳（时钟回拨）一律算过期。
+   *
+   * @param {{ at: number, partial: boolean }} entry 缓存条目。
+   * @param {number} time 当前时间。
+   * @returns {boolean} 是否命中新鲜度。
+   */
+  function isFresh(entry, time) {
+    const age = time - entry.at
+    return age >= 0 && age < (entry.partial ? USAGE_PARTIAL_CACHE_MS : USAGE_CACHE_MS)
+  }
+
+  /**
+   * 把缓存条目包装成一次读取结果。
+   *
+   * 每次返回新对象与新 counts：调用方（含客户端）不该拿到内部引用。
+   *
+   * @param {{ counts: Record<string, number>, at: number, partial: boolean }} entry 缓存或新结果。
+   * @returns {{ counts: Record<string, number>, at: number, partial: boolean, stale: boolean, refreshing: boolean }} 读取结果。
+   */
+  function snapshot(entry) {
+    return {
+      counts: { ...entry.counts },
+      at: entry.at,
+      partial: entry.partial,
+      stale: false,
+      refreshing: false,
+    }
+  }
+
+  /**
    * 读取一批人格的累计轮次。
    *
-   * 返回 null 表示「没有任何可展示的数据」。结果按整全/部分分别写入
-   * 长/短缓存；`settings.refresh === true`（手动点「刷新」）时跳过新鲜度
-   * 检查，但熔断与令牌桶仍然生效。人格数量超过桶容量时自动分批限速，
-   * 任意 10 秒窗口内的请求数不会超过桶容量，只是读得慢一些。
+   * 返回 null 表示「没有任何可展示的数据」。缓存分两层：内存 + 可选磁盘；
+   * 新鲜就直接返回。**过期但仍有旧数字**时先回旧值（`stale: true`），同时
+   * 在后台补新值——重启后第一次进入设置页也能立刻看到角标，不必等第三方。
+   * `settings.refresh === true`（手动点「刷新」）跳过缓存与 SWR，强制等待新值。
    *
    * 失败不清空已有数据：整批失败时沿用旧缓存；部分失败时失败的那几个键
    * 沿用上一次的旧计数（`partial` 置真、缓存按短 TTL 尽快补齐）。键在
@@ -421,29 +614,50 @@ export function createUsage(options = {}) {
    *
    * @param {string[]} ids 人格 id 列表。
    * @param {{ refresh?: boolean }} [settings] 读取选项。
-   * @returns {Promise<{ counts: Record<string, number>, at: number, partial: boolean } | null>} 读取结果。
+   * @returns {Promise<{ counts: Record<string, number>, at: number, partial: boolean, stale: boolean, refreshing: boolean } | null>} 读取结果。
    */
   async function read(ids, settings = {}) {
     if (!enabled) return null
     const wanted = [...new Set(Array.isArray(ids) ? ids : [])].filter(isCountableId)
-    if (wanted.length === 0) return { counts: {}, at: now(), partial: false }
+    if (wanted.length === 0) return snapshot({ counts: {}, at: now(), partial: false })
 
+    loadCache()
     const skipCache = settings?.refresh === true
     const startedAt = now()
-    if (!skipCache && cache !== null && startedAt - cache.at < (cache.partial ? USAGE_PARTIAL_CACHE_MS : USAGE_CACHE_MS)) {
-      return { counts: { ...cache.counts }, at: cache.at, partial: cache.partial }
-    }
+    if (!skipCache && cache !== null && isFresh(cache, startedAt)) return snapshot(cache)
+
     if (startedAt < openUntil) {
       trace('usage.read', '熔断中，跳过读取', { waitMs: openUntil - startedAt })
-      return cache === null ? null : { counts: { ...cache.counts }, at: cache.at, partial: true }
+      return cache === null ? null : { ...snapshot(cache), partial: true, stale: true }
     }
     if (inflightRead !== null) return inflightRead
 
+    // 有旧缓存但已过期（常见于宿主刚重启）：先把旧数字交给页面，后台再校正。
+    // 手动刷新不走这条路——用户点「刷新」就是要等真值。
+    if (cache !== null && !skipCache) {
+      void startRefresh(wanted, false)
+      return { ...snapshot(cache), stale: true, refreshing: true }
+    }
+
+    return startRefresh(wanted, skipCache)
+  }
+
+  /**
+   * 启动一轮真实读取，并登记为在飞任务。
+   *
+   * 后台刷新（SWR）也走这里：调用方不 await，结果只用于更新缓存。内部的错误
+   * 已全部降级处理；这里再挂一个空处理器，避免后台 promise 变成未捕获拒绝。
+   *
+   * @param {string[]} wanted 已过滤的 id。
+   * @param {boolean} manual 是否手动刷新（跳过缓存）。
+   * @returns {Promise<{ counts: Record<string, number>, at: number, partial: boolean, stale: boolean, refreshing: boolean } | null>} 读取结果。
+   */
+  function startRefresh(wanted, manual) {
     const pending = (async () => {
       // 读取的结论（成功/失败）要等批请求全部结束才落笔，慢时每批要等满
       // 8 秒超时；先留一条开始痕迹，日志面板才不会在这段真空期里显得
       // 「点了刷新却什么都没发生」。
-      trace('usage.read', '开始读取', { ids: wanted.length, refresh: skipCache })
+      trace('usage.read', '开始读取', { ids: wanted.length, refresh: manual })
       /** @type {Record<string, number>} */
       const counts = {}
       let ok = 0
@@ -499,7 +713,9 @@ export function createUsage(options = {}) {
       if (ok === 0) {
         noteFailure(limited ? 429 : 0)
         reportReadFailures(failuresList, 0, report)
-        return cache === null ? null : { counts: { ...cache.counts }, at: cache.at, partial: true }
+        return cache === null
+          ? null
+          : { ...snapshot(cache), partial: true, stale: true, refreshing: false }
       }
 
       if (failed > 0) reportReadFailures(failuresList, ok, report)
@@ -524,31 +740,33 @@ export function createUsage(options = {}) {
         ids: wanted.length,
       })
       // 部分成功也缓存（失败键的旧值已并入），但 TTL 更短：角标全部保留，
-      // 失败的那几个键下次尽快用真值补齐。
+      // 失败的那几个键下次尽快用真值补齐。成功即写盘，重启后仍能立刻显示。
       cache = { counts: { ...merged }, at: result.at, partial: result.partial }
-      return result
+      persistCache()
+      return { ...result, stale: false, refreshing: false }
     })()
-
     inflightRead = pending
-    try {
-      return await pending
-    } finally {
+    const settle = () => {
       if (inflightRead === pending) inflightRead = null
     }
+    pending.then(settle, settle)
+    return pending
   }
 
   /**
    * 只读状态，供测试与诊断使用。
    *
-   * @returns {{ enabled: boolean, cachedAt: number | null, breakerOpenUntil: number | null }} 状态。
+   * @returns {{ enabled: boolean, cachedAt: number | null, breakerOpenUntil: number | null, refreshing: boolean }} 状态。
    */
   function status() {
     return {
       enabled,
       cachedAt: cache === null ? null : cache.at,
       breakerOpenUntil: openUntil > now() ? openUntil : null,
+      // 后台刷新是否在飞：客户端据此决定要不要短延迟再取一次。
+      refreshing: inflightRead !== null,
     }
   }
 
-  return { record, read, status }
+  return { record, read, discard, status }
 }

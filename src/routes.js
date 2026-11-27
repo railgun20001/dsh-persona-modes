@@ -54,14 +54,16 @@ function respond(res, status, body) {
  * 整体读取失败时给出自动重试的等待毫秒数，客户端据此安排自愈重试。
  *
  * 只有熔断确实开着才提示：熔断兜底期间重试注定空手而归；没开熔断说明
- * 是网络抖动，客户端按默认间隔自行重试。
+ * 是网络抖动，客户端按默认间隔自行重试。带旧缓存（stale）时也要给：
+ * 旧值虽能显示，但后台刷新撞上熔断照样该按退避再试。
  *
  * @param {object} usage 计数客户端。
- * @param {{ at?: number } | null} result 读取结果。
+ * @param {{ at?: number, stale?: boolean } | null} result 读取结果。
  * @returns {{ retryAfterMs?: number }} 追加进响应体的字段。
  */
 function buildRetryHint(usage, result) {
-  if (typeof result?.at === 'number') return {}
+  // 新数据（非 stale）说明读取成功，不需要重试提示。
+  if (result?.stale !== true && typeof result?.at === 'number') return {}
   const breaker = typeof usage.status === 'function' ? usage.status() : null
   const openUntil = breaker === null ? null : breaker.breakerOpenUntil
   const now = Date.now()
@@ -320,6 +322,9 @@ export function createRouteHandler(store, options = {}) {
               counts: result?.counts ?? {},
               fetchedAt: typeof result?.at === 'number' ? result.at : null,
               ...(result?.partial === true ? { partial: true } : {}),
+              // 旧缓存先顶上的响应：客户端照常显示数字，若后台仍在刷新就短延迟再取。
+              ...(result?.stale === true ? { stale: true } : {}),
+              ...(result?.refreshing === true ? { refreshing: true } : {}),
               ...buildRetryHint(usage, result),
             })
           })
@@ -345,6 +350,15 @@ export function createRouteHandler(store, options = {}) {
           fail('route.usage/prefs', 'invalid-input', { stage: 'validate' })
           respond(res, 400, { ok: false, error: 'invalid-input' })
           return
+        }
+        // 关闭「显示统计」即删除本地缓存文件：既然不再显示，本机不该留着统计
+        // 痕迹。重新打开后是一次冷读，符合「关了就是关干净」的取舍。
+        if (result.usage.fetch !== true) {
+          try {
+            usage?.discard?.()
+          } catch (error) {
+            fail('route.usage/prefs', error, { stage: 'discard' })
+          }
         }
         const payload = buildStatePayload(store, version)
         respond(res, 200, {

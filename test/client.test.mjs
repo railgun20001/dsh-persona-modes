@@ -574,6 +574,36 @@ assert.ok(
 )
 assert.ok(usageText.includes('已上报的聚合计数无法撤回'))
 
+// stale 响应（本地缓存过期、宿主先回旧值）：旧数字照常显示；只有确认后台
+// 仍在刷新时才安排一次短延迟补取，后台已失败则交给通用退避重试。
+const { usageFollowUp } = globalThis.__personaExports.__test
+assert.deepEqual(
+  usageFollowUp({ stale: true, refreshing: true, fetchedAt: 1, counts: {} }),
+  { kind: 'stale' },
+)
+assert.deepEqual(
+  usageFollowUp({ stale: true, refreshing: false, retryAfterMs: 30_000, fetchedAt: 1 }),
+  { kind: 'retry' },
+)
+assert.equal(usageFollowUp({ stale: true, refreshing: false, fetchedAt: 1 }), null)
+assert.equal(usageFollowUp({ fetchedAt: 1, counts: {} }), null)
+assert.equal(usageFollowUp(null), null)
+
+// SWR 补取必须走普通读取（`force = false`）：后台刷新可能刚好写完缓存，
+// 命中即可；改成强制刷新会让每次进设置页多打一轮第三方。
+assert.ok(
+  /scheduleUsageRetry\(data, USAGE_STALE_REFRESH_DELAY_MS, false\)/u.test(source),
+  'stale 补取应传 force=false，避免重复请求第三方',
+)
+assert.ok(
+  /force \? \{ refresh: true \} : \{\}/u.test(source),
+  'refreshCounts 应按 force 决定是否带 refresh: true',
+)
+assert.ok(
+  /onClick: \(\) => onRefresh\(\)/u.test(source),
+  '手动「刷新」按钮应走默认 force=true',
+)
+
 const toggles = flatten(usageTree).filter((node) => node.props?.role === 'switch')
 assert.equal(toggles.length, 2)
 // 裸开关：不重复渲染 label 文字，无外框容器，文字只在 aria-label 里。

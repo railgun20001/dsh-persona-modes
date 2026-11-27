@@ -198,33 +198,53 @@ export function intensityTags(value) {
  */
 export function lexiconLines(lexicon, intensity) {
   const list = parseLexicon(lexicon)
-  if (list.length === 0) return []
-  const count = LEXICON_COUNTS[normalizeIntensity(intensity)]
-  if (!(count > 0)) return []
+  const count = lexiconCount(list.length, intensity)
+  if (count === 0) return []
   const picked = list.slice(0, count)
   return [`口癖：${picked.join('；')}`]
 }
 
 /**
- * 口癖词表在各强度档位下的注入条数。
+ * 计算某个档位实际注入的词条数。
  *
- * 标签块擅长描述「性格」，却点名不到「具体句子」：`爱用排比` 只说明要排比，
+ * 三档开放度（用户指定：低档一条、中档一半、高档全量）：
+ *
+ * - 低档 1 条：最低浓度也留一句口头禅，够有味、又不占地方；
+ * - 中档**一半**（向上取整，至少 1 条）：8 条词表 → 4 条；
+ * - 高档全量：演出档才把整份词表摆上来。
+ *
+ * 中档用比例而不是写死条数：词表是用户可编辑的，写死「2 条」在 3 条词表时等于全量、
+ * 在 20 条时等于象征性给一点；按比例走，中档永远是「半份」，词表多长都自洽。
+ *
+ * @param {number} total 解析后的词条总数。
+ * @param {unknown} intensity 强度值。
+ * @returns {number} 该档位注入的条数。
+ */
+export function lexiconCount(total, intensity) {
+  const size = Number.isFinite(total) ? Math.max(0, Math.floor(total)) : 0
+  if (size === 0) return 0
+  const tier = normalizeIntensity(intensity)
+  if (tier === 'low') return 1
+  if (tier === 'medium') return Math.max(1, Math.ceil(size / 2))
+  return size
+}
+
+/**
+ * 口癖词表在各强度档位下开放多少（仅供文档与视图说明，真实计算见 {@link lexiconCount}）。
+ *
+ * 标签块擅长描述「性格」，却点名不到「具体句子」：`爱用最字排比` 只说明要排比，
  * 模型会拿自己的高频表达（「简单说」「总的来说」）填坑，吐不出某个角色的
  * 固定句式。要命中字面，只能在上下文里给出**词本身**，这就是口癖词表的由来。
  *
- * 词表仍按档位逐层开放，与 `可用层次` 同一套思路：
- *
- * - 低档 0 条：低档是长文与代码任务的默认档，一个字都不多花；
- * - 中档前 2 条：够开个头，不至于成套输出；
- * - 高档全量：演出档才把整份词表摆上来。
+ * 词表按档位逐层开放，与 `可用层次` 同一套思路：低档 0 / 中档一半 / 高档全量。
  *
  * 词条是**词与短语**，不是台词或示例对话——给词表不等于给剧本，模型不会因此
  * 把整段模仿当成事实来源，也守住了本模块「不写角色卡、不写示例对话」的底线。
  */
-export const LEXICON_COUNTS = {
-  low: 0,
-  medium: 2,
-  high: Number.POSITIVE_INFINITY,
+export const LEXICON_TIERS = {
+  low: 'one',
+  medium: 'half',
+  high: 'all',
 }
 
 /**
@@ -931,7 +951,7 @@ export function buildModesView(activeId, state = {}) {
       lexicon: mode.lexicon ?? '',
       lexiconPhrases: phrases,
       lexiconCount: phrases.length,
-      lexiconInjected: Math.min(phrases.length, LEXICON_COUNTS[normalizeIntensity(state?.intensity)]),
+      lexiconInjected: lexiconCount(phrases.length, state?.intensity),
       body: mode.prompt,
       defaults: mode.defaults,
     }

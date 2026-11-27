@@ -335,7 +335,7 @@ const lexiconTree = PersonaView({
 })
 const lexiconText = textOf(lexiconTree)
 assert.ok(
-  lexiconText.includes('口癖词表 8 条 · 当前档位注入 2 条'),
+  lexiconText.includes('口癖词表 8 条 · 当前档位注入 4 条'),
   `预览里没有口癖词表说明：${lexiconText.slice(0, 200)}`,
 )
 assert.ok(lexiconText.includes('口癖：最直白、最不绕弯；一句话讲透'), '预览的提示词里应含口癖行')
